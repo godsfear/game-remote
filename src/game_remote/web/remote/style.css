@@ -1,0 +1,155 @@
+:root {
+  --bg: #12141a;
+  --surface: #1d212b;
+  --text: #f1f2f5;
+  --muted: #9aa0ab;
+  --ok: #3ecf7a;
+  --bad: #ef5b5b;
+  --gap: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 6px;
+  min-height: 48px;
+}
+
+#panel-name {
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+#panel-name.many::after { content: " ▾"; color: var(--muted); }
+
+#status { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+#status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+#status.online .dot { background: var(--ok); }
+#status.connecting .dot { background: #e2b340; }
+
+#grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  grid-auto-rows: minmax(84px, 1fr);
+  gap: var(--gap);
+  padding: 8px var(--gap) var(--gap);
+  overflow-y: auto;
+  touch-action: none;
+}
+body.offline #grid { opacity: 0.45; }
+
+.btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--color, #2b3040);
+  color: #fff;
+  font: inherit;
+  font-size: clamp(15px, 4.2vw, 24px);
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  overflow: hidden;
+  touch-action: none;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25);
+  transition: transform 60ms, filter 60ms;
+}
+.btn .label { position: relative; overflow-wrap: anywhere; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.btn img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.btn.has-image .label {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 14px 6px 6px;
+  font-size: 0.72em;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+.btn.hold::before {
+  content: "";
+  position: absolute; top: 8px; right: 8px;
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+}
+.btn.down { transform: scale(0.96); filter: brightness(1.35); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.85); }
+.btn.hold.down::before { background: #fff; }
+.btn.rejected { animation: rejected 0.5s; }
+@keyframes rejected { 0%, 60% { box-shadow: inset 0 0 0 4px var(--bad); } }
+
+#message { margin: auto; padding: 24px; max-width: 28em; text-align: center; font-size: 18px; line-height: 1.4; color: var(--muted); }
+
+#panel-list {
+  position: fixed; inset: 0;
+  background: rgba(10, 11, 15, 0.96);
+  padding: calc(16px + env(safe-area-inset-top)) 16px 16px;
+  overflow-y: auto;
+  -webkit-user-select: none;
+}
+#panel-list h2 { margin: 4px 0 14px; font-size: 16px; font-weight: 500; color: var(--muted); }
+#panel-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+#panel-items button {
+  width: 100%; padding: 18px 16px;
+  font: inherit; font-size: 19px; font-weight: 600; text-align: left;
+  color: var(--text); background: var(--surface); border: 0; border-radius: 14px;
+}
+#panel-items button[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--ok); }
+
+#toast {
+  position: fixed; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom));
+  padding: 12px 14px; border-radius: 12px;
+  background: #3a1f24; color: #ffd9d9; font-size: 15px; line-height: 1.3; text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+@media (orientation: landscape) {
+  header { padding-top: 6px; min-height: 40px; }
+  #grid { grid-auto-rows: minmax(64px, 1fr); }
+}
+
+/* Keeps the screen on (see app.js). Covers the page, stays behind everything. */
+#awake {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -1;
+  opacity: 0.01;
+  pointer-events: none;
+}

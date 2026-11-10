@@ -1,3 +1,5 @@
+import sys
+
 from game_remote.main import main
 
-main()
+sys.exit(main())

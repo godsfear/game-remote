@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "game-remote"
-version = "0.0.1"
+version = "0.1.0.dev1"
 description = "Custom buttons for every game — on your phone or tablet"
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,9 @@ dependencies = [
     "uvicorn>=0.30",
     # uvicorn serves WebSocket only when a WebSocket library is installed.
     "websockets>=13",
+    "segno>=1.6",
+    "pystray>=0.19; sys_platform == 'win32'",
+    "pillow>=10; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +25,7 @@ dev = [
     "pytest>=8",
     "httpx>=0.27",
     "ruff>=0.6",
+    "pyinstaller>=6.6",
 ]
 
 [project.scripts]

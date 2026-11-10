@@ -1,20 +1,31 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#12141a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Game Remote</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background: #15171c; color: #e8e9ec; }
-    main { text-align: center; }
-    p { color: #9aa0ab; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <h1>Game Remote</h1>
-    <p>Пульт появится на вехе 1. Сервер работает.</p>
-    <p>The panel arrives in milestone 1. The server is running.</p>
-  </main>
+  <!-- A playing video keeps the phone screen on; see keepAwake() in app.js. -->
+  <video id="awake" muted loop playsinline autoplay disablepictureinpicture aria-hidden="true" tabindex="-1">
+    <source src="awake.mp4" type="video/mp4">
+    <source src="awake.webm" type="video/webm">
+  </video>
+  <header>
+    <button id="panel-name" type="button" aria-haspopup="listbox"></button>
+    <div id="status" class="offline" role="status"><span class="dot"></span><span id="status-text"></span></div>
+  </header>
+  <main id="grid" aria-live="off"></main>
+  <p id="message" hidden></p>
+  <div id="panel-list" hidden>
+    <h2 data-i18n="remote.choosePanel"></h2>
+    <ul id="panel-items"></ul>
+  </div>
+  <div id="toast" role="alert" hidden></div>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
