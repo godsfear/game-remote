@@ -8,7 +8,8 @@ Run on the Windows PC, from the repository root:
         prints which program had focus and whether it runs as administrator.
 
     python tools/input_check.py serve
-        Prints an address to open on the phone (same Wi-Fi). The page has tap
+        Prints a link to open on the phone (same Wi-Fi). The link carries a
+        secret, so other devices on the network cannot press keys. The page has tap
         and hold buttons, sends them over WebSocket and shows the round trip.
         Allow Python through Windows Firewall on private networks if asked.
 
@@ -19,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import itertools
 import json
+import secrets
 import socket
 import sys
 import time
@@ -104,7 +107,7 @@ const log = m => { logEl.textContent = m + '\\n' + logEl.textContent.slice(0, 40
 let ws, rtts = [], seq = 0;
 const pending = new Map();
 function connect(){
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws = new WebSocket(`ws://${location.host}/ws${location.search}`);
   ws.onopen = () => { status.textContent = 'connected'; };
   ws.onclose = () => { status.textContent = 'disconnected, retrying...'; setTimeout(connect, 1000); };
   ws.onmessage = ev => {
@@ -165,7 +168,12 @@ def lan_addresses() -> list[str]:
     return found
 
 
-def build_app(controller: InputController):
+def build_app(controller: InputController, token: str):
+    """Test page plus a WebSocket that injects keys.
+
+    The socket accepts any key combo, so it only talks to clients that know
+    ``token`` (it is part of the link printed in the console).
+    """
     app = FastAPI()
     counter = itertools.count(1)
     background: set[asyncio.Task] = set()
@@ -176,6 +184,9 @@ def build_app(controller: InputController):
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        if not hmac.compare_digest(ws.query_params.get("k", ""), token):
+            await ws.close(code=1008)
+            return
         await ws.accept()
         source = f"phone-{next(counter)}"
         print(f"{source} connected from {ws.client}")
@@ -229,9 +240,13 @@ def run_serve(args: argparse.Namespace) -> None:
     controller = InputController(default_backend(), tap_ms=args.hold)
     print(f"Game Remote running as administrator: {self_is_elevated()}")
     print("Open on the phone (same Wi-Fi):")
+    token = secrets.token_urlsafe(9)
     for addr in lan_addresses():
-        print(f"  http://{addr}:{args.port}/")
-    uvicorn.run(build_app(controller), host="0.0.0.0", port=args.port, log_level="warning")
+        print(f"  http://{addr}:{args.port}/?k={token}")
+    print("Also try the computer name (it survives IP changes; may not work on every phone):")
+    print(f"  http://{socket.gethostname()}.local:{args.port}/?k={token}")
+    print("The link contains a secret for this run: without it the page cannot press keys.")
+    uvicorn.run(build_app(controller, token), host="0.0.0.0", port=args.port, log_level="warning")
 
 
 def main() -> None:

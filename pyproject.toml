@@ -11,6 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    # uvicorn serves WebSocket only when a WebSocket library is installed.
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]
