@@ -41,3 +41,7 @@ pytest -q
 python -m game_remote          # editor on http://127.0.0.1:8730, phone panel on port 8731
 python tools/input_check.py -h # milestone 0: check that key presses reach your games
 ```
+
+## License
+
+[MIT](LICENSE)
