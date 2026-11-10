@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from collections.abc import Coroutine
 
 from game_remote.input.backend import InputBackend, KeyEvent
 from game_remote.input.keys import Combo, scan_code
@@ -53,7 +54,17 @@ class InputController:
 
     async def tap(self, combo: Combo, hold_ms: int | None = None) -> None:
         """Press and release, keeping the keys down long enough for a game to notice."""
+        await self.start_tap(combo, hold_ms)
+
+    def start_tap(self, combo: Combo, hold_ms: int | None = None) -> Coroutine[None, None, None]:
+        """Press now and return the rest of the tap (wait, then release) to await.
+
+        Pressing right away lets the caller report a failed press to the phone.
+        """
         self._press(combo)
+        return self._finish_tap(combo, hold_ms)
+
+    async def _finish_tap(self, combo: Combo, hold_ms: int | None) -> None:
         try:
             await asyncio.sleep((self._tap_ms if hold_ms is None else hold_ms) / 1000)
         finally:

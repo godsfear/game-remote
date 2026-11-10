@@ -28,3 +28,7 @@ htmlcov/
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Browser check
+node_modules/
+package-lock.json

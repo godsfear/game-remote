@@ -30,3 +30,43 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest -q
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -e .
+      - run: npm install --no-save playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/browser/check.js screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots
+          if-no-files-found: ignore
+
+  build-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: python tools/build_exe.py
+      - name: Start the exe and use it like a phone would
+        run: python tools/smoke_test.py dist/GameRemote.exe
+      - name: The same with a real key press through SendInput
+        run: python tools/smoke_test.py --real-input dist/GameRemote.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GameRemote
+          path: dist/GameRemote.exe
+          if-no-files-found: error
