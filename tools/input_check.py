@@ -1,4 +1,4 @@
-"""Stage 1 risk check: does injected input reach your games, and how fast?
+"""Milestone 0 risk check: does injected input reach your games, and how fast?
 
 Run on the Windows PC, from the repository root:
 

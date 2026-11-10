@@ -19,6 +19,6 @@ def create_remote_app(settings: Settings, controller: InputController) -> FastAP
     async def health() -> dict:
         return {"status": "ok", "app": "remote", "version": __version__}
 
-    # Pairing, the WebSocket channel and the panel itself arrive in stages 6-7.
+    # The panel and its WebSocket channel arrive in milestone 1, pairing in milestone 3.
     app.mount("/", StaticFiles(directory=web_dir("remote"), html=True), name="remote")
     return app
