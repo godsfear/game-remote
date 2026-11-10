@@ -27,4 +27,15 @@ The project is at the concept stage. The first release is planned to include:
 
 ## Stack
 
-Python · Flask · Waitress · SQLite · Windows `SendInput` · PyInstaller
+Python · FastAPI · Uvicorn · SQLite · Windows `SendInput` · PyInstaller
+
+## Development
+
+```
+python -m pip install -e ".[dev]"
+pytest -q
+python -m game_remote          # editor on http://127.0.0.1:8730, phone panel on port 8731
+python tools/input_check.py -h # stage 1: check that key presses reach your games
+```
+
+Plan: [PLAN.md](PLAN.md)
