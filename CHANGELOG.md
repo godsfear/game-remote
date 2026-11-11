@@ -1,12 +1,26 @@
 # Изменения / Changelog
 
-## Не выпущено / Unreleased
+## 0.3.0
 
-- Наборы: игру можно экспортировать в zip и импортировать на другом ПК. В наборе кнопки, экраны и картинки.
-- Подписи набора могут быть на нескольких языках. При импорте берётся язык редактора или браузера, иначе английский, иначе язык автора.
+Наборы: игрой теперь можно поделиться.
 
-- Sets: a game can be exported as a zip and imported on another PC. A set holds the buttons, the screens and the pictures.
-- The texts of a set can come in several languages. An import takes the language of the editor or the browser, else English, else the language of the author.
+- «Экспортировать набор» в карточке игры сохраняет её в zip: кнопки, экраны и картинки. «Импортировать набор» под списком игр добавляет игру из такого файла. Своя игра с тем же названием не заменяется.
+- У набора могут быть подписи на нескольких языках. При импорте берётся язык редактора или браузера, иначе английский, иначе язык автора. Как добавить перевод, описано в руководстве.
+- Файл набора проверяется: программа берёт из него только описание кнопок и картинки и говорит, что не так, если архив повреждён, закрыт паролем или в нём чего-то не хватает.
+- Запись сочетания больше не перехватывает ввод: если во время записи перейти в поле подписи или названия, клавиши попадают в текст, а не в сочетание кнопки.
+- Сообщения редактора стали точнее: «Не сохранено» пишется только тогда, когда правки действительно не дошли до ПК.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Импортированная игра — обычная игра: её открывает и версия 0.2.0.
+
+Sets: a game can now be shared.
+
+- "Export as a set" on the card of a game saves it as a zip: the buttons, the screens and the pictures. "Import a set" under the list of games adds the game of such a file. A game of your own with the same name is not replaced.
+- A set can carry its labels in several languages. An import takes the language of the editor or the browser, else English, else the language of the author. The guide says how to add a translation.
+- The file of a set is checked: the program takes only the description of the buttons and the pictures from it, and says what is wrong when the zip is damaged, has a password or misses something.
+- Recording a shortcut no longer swallows typing: go to the field of a label or a name while it records, and the keys become text, not the shortcut of the button.
+- The messages of the editor are more exact: "Not saved" appears only when the edits really did not reach the PC.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. An imported game is a plain game: version 0.2.0 opens it too.
 
 ## 0.2.0
 
