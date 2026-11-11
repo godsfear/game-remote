@@ -23,6 +23,7 @@ from game_remote.panels import (
     MAX_SET_BYTES,
     ImageError,
     Panel,
+    SameName,
     pack_set,
     short_error,
 )
@@ -37,6 +38,8 @@ BODY = Body(...)
 LANGUAGE = Query(default=None, pattern="^[a-z]{2}$")
 # The languages the user reads, best first, e.g. "de,en". A browser may name none.
 LANGUAGES = Query(default=None, pattern="^([a-z]{2}(,[a-z]{2}){0,9})?$")
+# What an import does when a game of that name is on the PC already.
+SAME_NAME = Query(default="ask", pattern="^(ask|replace|add)$")
 
 
 class NewPanel(BaseModel):
@@ -266,16 +269,25 @@ def create_editor_app(state: AppState) -> FastAPI:
         )
 
     @app.post("/api/sets", status_code=201)
-    async def import_set(request: Request, languages: str | None = LANGUAGES) -> Response:
-        """The body is the zip of a set. It becomes a new game in the first of
-        ``languages`` the set has."""
+    async def import_set(
+        request: Request, languages: str | None = LANGUAGES, same_name: str = SAME_NAME
+    ) -> Response:
+        """The body is the zip of a set. It becomes a game in the first of
+        ``languages`` the set has. When a game of that name is here already,
+        the reply is 409 with that game, and the page sends the file again
+        with ``same_name`` set to "replace" or "add"."""
         data = await body_within(request, MAX_SET_BYTES)
         if data is None:
             return JSONResponse({"error": "the file is too large"}, status_code=413)
         wanted = languages.split(",") if languages else []
         try:
             # Unpacking takes a while for a large set; a thread keeps the phones served.
-            panel_id = await asyncio.to_thread(state.store.import_set, data, *wanted)
+            panel_id = await asyncio.to_thread(
+                state.store.import_set, data, *wanted, same_name=same_name
+            )
+        except SameName as twin:
+            found = {"error": "same_name", "id": twin.panel_id, "name": twin.name}
+            return JSONResponse(found, status_code=409)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
         except OSError as exc:

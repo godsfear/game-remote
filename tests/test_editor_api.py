@@ -219,7 +219,8 @@ def test_a_game_is_exported_and_imported_as_a_set(client, state):
         assert sorted(archive.namelist()) == sorted(["panel.json", name])
         assert json.loads(archive.read("panel.json"))["language"] == "en"
 
-    imported = client.post("/api/sets?languages=ru", content=exported.content, headers=ZIP)
+    again = "/api/sets?languages=ru&same_name=add"  # the game it came from is still here
+    imported = client.post(again, content=exported.content, headers=ZIP)
     assert imported.status_code == 201 and imported.json()["id"] == "demo-2"
     first, second = imported.json()["panels"]
     assert {**second, "id": "demo"} == first
@@ -242,14 +243,15 @@ def test_an_imported_set_takes_the_language_of_the_page(client, state):
     # The first language the set has wins; German is what panel.json is in.
     # A browser may name no language at all: that is not a mistake of the request.
     cases = (
-        ("?languages=ru", "Элита", "Шасси"),
-        ("?languages=fr,ru,en", "Элита", "Шасси"),
-        ("?languages=fr", "Elite", "Fahrwerk"),
-        ("?languages=", "Elite", "Fahrwerk"),
+        ("&languages=ru", "Элита", "Шасси"),
+        ("&languages=fr,ru,en", "Элита", "Шасси"),
+        ("&languages=fr", "Elite", "Fahrwerk"),
+        ("&languages=", "Elite", "Fahrwerk"),
         ("", "Elite", "Fahrwerk"),
     )
     for query, name, label in cases:
-        reply = client.post(f"/api/sets{query}", content=zipped(files), headers=ZIP)
+        address = f"/api/sets?same_name=add{query}"
+        reply = client.post(address, content=zipped(files), headers=ZIP)
         panel = reply.json()["panels"][-1]
         assert (panel["name"], panel["buttons"][0]["label"]) == (name, label)
     folder = state.settings.panels_dir / "elite"
@@ -319,7 +321,7 @@ def test_a_damaged_zip_is_refused_not_a_crash(client):
         damaged = bytearray(good)
         for _ in range(flip.randint(1, 4)):
             damaged[flip.randrange(len(damaged))] ^= 1 << flip.randrange(8)
-        reply = client.post("/api/sets", content=bytes(damaged), headers=ZIP)
+        reply = client.post("/api/sets?same_name=add", content=bytes(damaged), headers=ZIP)
         seen.add(reply.status_code)
         assert reply.status_code in (201, 422), reply.text
         # The reason is in this program's words: it names a file of the set or the zip.
@@ -350,7 +352,7 @@ def test_a_game_with_a_lost_picture_is_exported_as_a_whole_set(client, state):
     exported = client.get("/api/panels/elite/export").content
     with zipfile.ZipFile(io.BytesIO(exported)) as archive:
         assert sorted(archive.namelist()) == ["cover.png", "panel.json"]
-    again = client.post("/api/sets", content=exported, headers=ZIP)
+    again = client.post("/api/sets?same_name=add", content=exported, headers=ZIP)
     assert again.status_code == 201
     copy = again.json()["panels"][-1]
     assert (copy["cover"], copy["buttons"][0]["image"]) == ("cover.png", None)
@@ -387,3 +389,44 @@ def test_a_zip_this_program_cannot_open_is_not_called_damaged(client):
     ):
         reply = client.post("/api/sets", content=body, headers=ZIP)
         assert reply.status_code == 422 and reason in reply.json()["error"], reply.json()
+
+
+def test_an_import_asks_before_it_touches_a_game_of_the_same_name(client, state):
+    files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    russian = {"panel.ru.json": {"name": "Элита"}}
+    panels = state.settings.panels_dir
+    assert client.post("/api/sets", content=zipped(files), headers=ZIP).json()["id"] == "elite"
+
+    # The same set again: the PC changes nothing and names the game that is in the way.
+    asked = client.post("/api/sets", content=zipped(files), headers=ZIP)
+    assert (asked.status_code, asked.json()) == (
+        409,
+        {"error": "same_name", "id": "elite", "name": "Elite"},
+    )
+    assert sorted(p.name for p in panels.iterdir()) == ["demo", "elite"]
+    # It is the name the game would get that counts, whatever the letters' case.
+    lower = {**files, "panel.json": ELITE | {"name": "  elite "}}
+    assert client.post("/api/sets", content=zipped(lower), headers=ZIP).status_code == 409
+    other = client.post("/api/sets?languages=ru", content=zipped(files | russian), headers=ZIP)
+    assert (other.status_code, other.json()["panels"][-1]["name"]) == (201, "Элита")
+
+    # "Add": the set stands next to the game.
+    added = client.post("/api/sets?same_name=add", content=zipped(files), headers=ZIP)
+    assert (added.status_code, added.json()["id"]) == (201, "elite-3")
+
+    # "Replace": the set takes the place and the id of the game, which goes to the trash.
+    changed = {**files, "panel.json": ELITE | {"columns": 5}}
+    replaced = client.post("/api/sets?same_name=replace", content=zipped(changed), headers=ZIP)
+    assert (replaced.status_code, replaced.json()["id"]) == (201, "elite")
+    assert json.loads(panel_file(state, "elite").read_text(encoding="utf-8"))["columns"] == 5
+    assert sorted(p.name for p in panels.iterdir()) == ["demo", "elite", "elite-2", "elite-3"]
+    (trashed,) = state.settings.trash_dir.iterdir()
+    assert trashed.name.startswith("elite-") and (trashed / "gear.png").read_bytes() == PNG
+
+    # Without a game of that name there is nothing to ask or to replace.
+    fresh = {**files, "panel.json": ELITE | {"name": "Frontier"}}
+    for answer in ("ask", "replace"):
+        reply = client.post(f"/api/sets?same_name={answer}", content=zipped(fresh), headers=ZIP)
+        assert reply.status_code == 201
+        client.delete(f"/api/panels/{reply.json()['id']}", headers=ORIGIN)
+    assert client.post("/api/sets?same_name=maybe", content=zipped(files)).status_code in (403, 422)

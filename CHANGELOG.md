@@ -1,5 +1,11 @@
 # Изменения / Changelog
 
+## Не выпущено / Unreleased
+
+- Импорт набора спрашивает, что делать, если игра с таким названием уже есть: добавить набор рядом или заменить им игру. Заменённая игра переносится в корзину программы.
+
+- An import of a set asks what to do when a game of that name is there already: add the set next to it or replace the game with it. A replaced game is moved to the trash folder of the program.
+
 ## 0.3.0
 
 Наборы: игрой теперь можно поделиться.

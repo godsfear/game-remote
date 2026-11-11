@@ -26,6 +26,7 @@ const el = Object.fromEntries([
   'window-hint', 'add-screen', 'screen-tabs', 'screen-row', 'screen-name', 'delete-screen',
   'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
   'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
+  'same-dialog', 'same-text',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -295,19 +296,29 @@ function wantedLanguages() {
     .filter((code) => /^[a-z]{2}$/.test(code)).slice(0, 10);
 }
 
-// The set becomes a new game, in the first of these languages the set has.
-async function importSet() {
+// The set becomes a game, in the first of these languages the set has. When a
+// game of that name is on the PC already, the PC changes nothing and says so:
+// the page asks, and the answer sends the same file again (see the wiring).
+async function importSet(sameName = 'ask') {
   const [file] = el['set-file'].files;
   if (!file) return;
   await save();
-  const response = await fetch(`/api/sets?languages=${wantedLanguages().join(',')}`, {
+  const query = `languages=${wantedLanguages().join(',')}&same_name=${sameName}`;
+  const response = await fetch(`/api/sets?${query}`, {
     method: 'POST',
     body: file,
     headers: { 'Content-Type': 'application/zip' },
   });
   let data = null;
   try { data = await response.json(); } catch { /* no body */ }
+  if (response.status === 409 && data?.error === 'same_name') {
+    el['same-text'].textContent = t('editor.sameName', { name: data.name });
+    el['same-dialog'].returnValue = '';
+    el['same-dialog'].showModal();
+    return;
+  }
   if (!response.ok) throw new Error(`${t('editor.importError')} ${data?.error || response.status}`);
+  dirty.delete(data.id); // a game that was replaced is what the set says now
   currentId = data.id;
   selectedId = null;
   screen = 0;
@@ -981,7 +992,11 @@ el['import-set'].addEventListener('click', () => {
   el['set-file'].value = '';
   el['set-file'].click();
 });
-el['set-file'].addEventListener('change', report(importSet));
+el['set-file'].addEventListener('change', report(() => importSet()));
+el['same-dialog'].addEventListener('close', report(() => {
+  const answer = el['same-dialog'].returnValue;
+  return answer === 'add' || answer === 'replace' ? importSet(answer) : null;
+}));
 el['game-name'].addEventListener('input', () => {
   currentPanel().name = el['game-name'].value;
   renderGames();

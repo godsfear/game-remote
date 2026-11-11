@@ -400,8 +400,8 @@ def test_the_watcher_leaves_an_import_alone(tmp_path, monkeypatch):
     seen = []
     install = store.install_set
 
-    def install_and_look(*args):
-        install(*args)
+    def install_and_look(*args, **options):
+        install(*args, **options)
         # The folder is there and the import has not read it yet: the watcher
         # must not announce the panel a second time.
         seen.append(store.reload_if_changed())

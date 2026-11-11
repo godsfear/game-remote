@@ -63,6 +63,16 @@ class ImageError(ValueError):
     """An uploaded file is not an image this program accepts."""
 
 
+class SameName(Exception):
+    """An imported set is called like a game that is on the PC already, and
+    nobody said yet whether it replaces that game or stands next to it."""
+
+    def __init__(self, panel_id: str, name: str) -> None:
+        super().__init__(f"a game called {name!r} is here already")
+        self.panel_id = panel_id
+        self.name = name
+
+
 def image_extension(data: bytes) -> str | None:
     """File extension for PNG, JPEG or WebP data, judged by its first bytes."""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -528,17 +538,37 @@ class PanelStore:
             panel_id = f"{base}-{number}"
         return panel_id
 
-    def import_set(self, data: bytes, *languages: str) -> str:
-        """Add the set in a zip as a new panel, in the first of ``languages``
-        the set has; returns its id. A ValueError says what is wrong with the
-        file."""
+    def import_set(
+        self, data: bytes, *languages: str, same_name: Literal["add", "replace", "ask"] = "add"
+    ) -> str:
+        """Make the set in a zip a panel, in the first of ``languages`` the set
+        has; returns its id. A ValueError says what is wrong with the file.
+
+        ``same_name`` is what to do when a game of that name is here already:
+        "add" the set next to it, "replace" the game (it goes to the trash
+        folder, the set takes its place and its id), or "ask", which changes
+        nothing and raises SameName.
+        """
         self._importing = True
         try:
             with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporary:
                 unpack_set(data, Path(temporary))
                 panel_set = read_set(Path(temporary))
-                panel_id = self._free_id(panel_set.panel.name)
-                self.install_set(panel_set, panel_id, *languages)
+                name = panel_set.in_language(*languages).name
+                # Several games may share the name; the first of them stands for all.
+                twin = next(
+                    (
+                        loaded.id
+                        for loaded in self.panels.values()
+                        if loaded.panel.name.strip().casefold() == name.strip().casefold()
+                    ),
+                    None,
+                )
+                if twin and same_name == "ask":
+                    raise SameName(twin, name)
+                replace = bool(twin) and same_name == "replace"
+                panel_id = twin if replace else self._free_id(panel_set.panel.name)
+                self.install_set(panel_set, panel_id, *languages, replace=replace)
             self.load()
         finally:
             self._importing = False
@@ -576,9 +606,13 @@ class PanelStore:
         self.install_set(read_set(sample_dir(SAMPLE_ID)), SAMPLE_ID, system_language())
         return True
 
-    def install_set(self, panel_set: PanelSet, panel_id: str, *languages: str) -> None:
+    def install_set(
+        self, panel_set: PanelSet, panel_id: str, *languages: str, replace: bool = False
+    ) -> None:
         """Make a set one of the user's panels, in one language (see
-        ``PanelSet.in_language``). The caller chooses an id that is free."""
+        ``PanelSet.in_language``). The caller chooses an id that is free, or
+        says that the set replaces the panel of that id: then the old one is
+        moved to the trash folder once the new one is ready."""
         panel = panel_set.in_language(*languages)
         # Built aside and moved in whole, so a failure leaves no half of a panel.
         draft = self.root / f".{panel_id}.tmp"
@@ -588,6 +622,8 @@ class PanelStore:
             for name in sorted(panel.images()):
                 shutil.copyfile(panel_set.folder / name, draft / name)
             (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
+            if replace:
+                self._to_trash(panel_id)
             _replace(draft, self.root / panel_id)
         except OSError:
             shutil.rmtree(draft, ignore_errors=True)

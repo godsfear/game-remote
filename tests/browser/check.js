@@ -687,9 +687,14 @@ async function main() {
     (await desk.locator('#export-language').inputValue()) === 'ru');
   const [download] = await Promise.all([desk.waitForEvent('download'), desk.click('#export-ok')]);
   ok('and the button keeps its shortcut', (await games())[0].buttons[0].keys === keysBefore);
+  const [original0] = await games();
   ok('a game is exported as a zip named after its folder', download.suggestedFilename() === 'demo.zip');
   const [setChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
   await setChooser.setFiles(await download.path());
+  await desk.waitForSelector('#same-dialog[open]');
+  ok('a set called like a game of the PC changes nothing until the user says what to do',
+    (await games()).length === 1 && (await desk.locator('#same-text').textContent()).includes(original0.name));
+  await desk.click('#same-add');
   ok('an imported set becomes a new game', await until(async () => (await games()).length === 2));
   const [original, copy] = await games();
   ok('with the same name and buttons', copy.name === original.name
@@ -712,6 +717,8 @@ async function main() {
   await desk.click('#columns-more');
   const [thirdChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
   await thirdChooser.setFiles(await download.path());
+  await desk.waitForSelector('#same-dialog[open]');
+  await desk.click('#same-add');
   await until(async () => (await games()).length === 3);
   ok('the save that failed is still reported after the import',
     await until(() => desk.locator('#save-state.error').count()));
@@ -721,6 +728,24 @@ async function main() {
     && (await desk.locator('#game-name').inputValue()) === '');
   await desk.fill('#game-name', original.name);
   await saved();
+
+  // "Replace": the set takes the place of the game, which goes to the trash folder.
+  const trashBefore = fs.readdirSync(path.join(dataDir, 'trash')).length;
+  await desk.click('#columns-more');
+  await saved();
+  const [fourthChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await fourthChooser.setFiles(await download.path());
+  await desk.waitForSelector('#same-dialog[open]');
+  await desk.click('#same-replace');
+  ok('a replaced game is what the set says', await until(async () => (
+    (await games()).find((game) => game.id === original.id).columns === original.columns
+  )));
+  ok('it keeps its place, and the old one is in the trash folder', (await games()).length === 3
+    && fs.readdirSync(path.join(dataDir, 'trash')).length === trashBefore + 1);
+  ok('the editor shows the game that was replaced', await until(async () => (
+    (await desk.locator('#game-list button[aria-current="true"]').getAttribute('data-panel')) === original.id
+    && Number(await desk.locator('#columns').textContent()) === original.columns
+  )));
 
   // An export waits for a save that is on its way.
   const order = [];
