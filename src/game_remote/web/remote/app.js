@@ -26,6 +26,7 @@ const el = {
   menuClose: document.getElementById('menu-close'),
   fullscreen: document.getElementById('menu-fullscreen'),
   vibration: document.getElementById('menu-vibration'),
+  delay: document.getElementById('menu-delay'),
 };
 
 const store = {
@@ -47,6 +48,7 @@ let nextId = 1;
 let lastPong = 0;
 let retryMs = 500;
 let retryTimer = 0;
+let delayMs = null; // time of the last ping to the PC and back
 let offlineSince = 0; // when the connection was lost; 0 while it is fine
 let vibration = store.get(VIBRATE_STORE) !== 'off';
 let toastTimer = 0;
@@ -209,6 +211,8 @@ function onMessage(message) {
     dropAllPresses(); // the game lost focus and the PC let go of the held keys
   } else if (message.type === 'pong') {
     lastPong = performance.now();
+    if (typeof message.t === 'number') delayMs = Math.max(0, Math.round(lastPong - message.t));
+    if (!el.menu.hidden) renderMenu();
   } else if (message.type === 'ack') {
     const node = waiting.get(message.id);
     waiting.delete(message.id);
@@ -362,6 +366,8 @@ function renderMenu() {
   el.fullscreen.setAttribute('aria-pressed', String(Boolean(fullscreenElement())));
   el.vibration.parentElement.hidden = !navigator.vibrate;
   el.vibration.setAttribute('aria-pressed', String(vibration));
+  el.delay.hidden = !online || delayMs === null;
+  el.delay.textContent = t('remote.delay', { ms: delayMs });
 }
 
 async function toggleFullscreen() {

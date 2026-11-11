@@ -215,6 +215,7 @@ async function main() {
   await page.waitForSelector('#menu:not([hidden])');
   ok('the phone menu offers full screen', await page.locator('#menu-fullscreen').isVisible());
   ok('vibration is on at first', (await page.locator('#menu-vibration').getAttribute('aria-pressed')) === 'true');
+  ok('the menu shows the delay to the PC', await until(async () => /: \d+ мс$/.test(await page.locator('#menu-delay').textContent())));
   await shot(page, 'phone-menu');
   await page.locator('#menu-vibration').tap();
   ok('vibration can be switched off', (await page.locator('#menu-vibration').getAttribute('aria-pressed')) === 'false');

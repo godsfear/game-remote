@@ -1,0 +1,47 @@
+name: Release
+
+# Builds GameRemote.exe and puts it into a draft release on GitHub.
+# Start it by pushing a tag such as v0.1.0, or by hand from the Actions page.
+# The draft is not visible to anyone until it is published on the Releases page.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0. Must match the version in pyproject.toml"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: The tag must match the version and have its notes
+        run: python tools/release_notes.py "$env:TAG" notes.md
+      - run: pytest -q
+      - run: python tools/build_exe.py
+      - name: Start the exe and use it like a phone would
+        run: python tools/smoke_test.py dist/GameRemote.exe
+      - name: The same with a real key press through SendInput
+        run: python tools/smoke_test.py --real-input dist/GameRemote.exe
+      - name: Checksum
+        shell: bash
+        run: cd dist && sha256sum GameRemote.exe > GameRemote.exe.sha256
+      - name: Draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$TAG" dist/GameRemote.exe dist/GameRemote.exe.sha256
+          --draft --title "Game Remote ${TAG#v}" --notes-file notes.md --target "$GITHUB_SHA"
