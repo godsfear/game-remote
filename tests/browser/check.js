@@ -210,6 +210,21 @@ async function main() {
     return !video.paused && video.readyState >= 2 && video.videoWidth > 0;
   })));
 
+  // ---- phone: settings of the device -----------------------------------------
+  await page.locator('#menu-open').tap();
+  await page.waitForSelector('#menu:not([hidden])');
+  ok('the phone menu offers full screen', await page.locator('#menu-fullscreen').isVisible());
+  ok('vibration is on at first', (await page.locator('#menu-vibration').getAttribute('aria-pressed')) === 'true');
+  await shot(page, 'phone-menu');
+  await page.locator('#menu-vibration').tap();
+  ok('vibration can be switched off', (await page.locator('#menu-vibration').getAttribute('aria-pressed')) === 'false');
+  ok('the choice is remembered on the device', (await page.evaluate(() => localStorage.getItem('gameRemote.vibrate'))) === 'off');
+  await page.locator('#menu-vibration').tap();
+  await page.locator('#menu-close').tap();
+  ok('the menu closes', await page.locator('#menu').isHidden());
+  const manifest = await (await fetch(`${remote}/manifest.json`)).json();
+  ok('the page has a home screen icon', (await fetch(`${remote}/${manifest.icons[0].src}`)).headers.get('content-type') === 'image/png');
+
   // ---- phone: landscape -----------------------------------------------------
   await page.setViewportSize({ width: 915, height: 412 });
   await sleep(200);
@@ -457,14 +472,21 @@ async function main() {
   killServer();
   ok('the phone shows the lost connection', await until(() => page.locator('#status.offline').count(), 8000));
   ok('the held button is no longer shown pressed', (await page.locator('.btn.down').count()) === 0);
+  ok('a short break shows no explanation yet', await page.locator('#notice').isHidden());
+  ok('a lasting break explains what to check', await until(() => page.locator('#notice').isVisible(), 8000));
   await shot(page, 'phone-offline');
   await touch('touchEnd', [{ ...fwd, id: 1 }]);
   await startServer(ports);
   ok('the phone reconnects by itself', await until(() => page.locator('#status.online').count(), 15000));
   ok('nothing is held after the reconnect', (await held()) === '[]');
+  ok('the explanation goes away with the connection', await page.locator('#notice').isHidden());
 
   // ---- a rejected press, with a fake PC -------------------------------------
   const mock = await phone.newPage();
+  await mock.addInitScript(() => {
+    window.buzzes = [];
+    Object.defineProperty(navigator, 'vibrate', { value: (pattern) => { window.buzzes.push(pattern); return true; } });
+  });
   await mock.routeWebSocket(/\/ws$/, (ws) => {
     ws.onMessage((text) => {
       const message = JSON.parse(text);
@@ -492,6 +514,7 @@ async function main() {
   await mock.locator('.btn[data-button="a"]').tap();
   await mock.waitForSelector('#toast:not([hidden])');
   ok('a rejected press says why', (await mock.locator('#toast').textContent()).includes('администратора'));
+  ok('a rejected press feels different from an accepted one', (await mock.evaluate(() => JSON.stringify(window.buzzes))) === '[12,[30,60,30]]');
   await shot(mock, 'phone-rejected');
 
   await browser.close();
