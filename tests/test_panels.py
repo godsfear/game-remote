@@ -45,6 +45,10 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     ]
     # Not tied to the game's window, so the first check in Notepad works.
     assert loaded.panel.window is None
+    # Two screens show how buttons are grouped: all six on the first, the second empty.
+    assert len(loaded.panel.screens) == 2
+    assert {b.screen for b in loaded.panel.buttons} == {0}
+    assert loaded.image_path(loaded.panel.cover).read_bytes()[:2] == b"\xff\xd8"
     pictures = [b.image for b in loaded.panel.buttons] + [loaded.panel.background]
     assert len(set(pictures)) == 7
     for name in pictures:
@@ -58,7 +62,7 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
 
 def test_every_packaged_picture_belongs_to_the_ready_made_panel():
     panel = sample_panel(russian=False)
-    used = {b.image for b in panel.buttons} | {panel.background}
+    used = {b.image for b in panel.buttons} | {panel.background, panel.cover}
     assert {p.name for p in sample_dir(SAMPLE_ID).iterdir()} == used
 
 
@@ -131,9 +135,46 @@ def test_phone_never_receives_key_combos(tmp_path):
     public = store.public()
     assert public[0]["id"] == "x4" and public[0]["columns"] == 3
     assert public[0]["buttons"] == [
-        {"id": "map", "label": "Map", "type": "tap", "color": None, "image": None}
+        {"id": "map", "label": "Map", "type": "tap", "color": None, "image": None, "screen": 0}
     ]
     assert "KeyM" not in json.dumps(public)
+
+
+def test_buttons_are_grouped_into_screens(tmp_path):
+    # A panel without screens is one screen: files of earlier versions stay valid.
+    plain = Panel.model_validate(MINIMAL)
+    assert plain.screens == [] and plain.buttons[0].screen == 0
+
+    data = {
+        "name": "SC",
+        "screens": ["Flight", "Combat"],
+        "buttons": [
+            {"id": "gear", "keys": "KeyN"},
+            {"id": "missile", "keys": "KeyG", "screen": 1},
+        ],
+    }
+    write_panel(tmp_path, "sc", data)
+    store = PanelStore(tmp_path)
+    store.load()
+    public = store.public()[0]
+    assert public["screens"] == ["Flight", "Combat"]
+    assert [button["screen"] for button in public["buttons"]] == [0, 1]
+
+    # Only a panel that has screens carries their fields in its file, so the
+    # version before screens still reads what this one writes.
+    store.save("sc", store.get("sc").panel)
+    store.save("x4", plain)
+    assert '"screen": 1' in (tmp_path / "sc" / "panel.json").read_text(encoding="utf-8")
+    assert "screen" not in (tmp_path / "x4" / "panel.json").read_text(encoding="utf-8")
+
+    for bad in (
+        {"screens": ["Flight"]},  # the second button is on a screen that is not there
+        {"screens": []},
+        {"screens": ["Flight", ""]},
+        {"screens": [f"s{n}" for n in range(9)]},
+    ):
+        with pytest.raises(ValidationError):
+            Panel.model_validate(data | bad)
 
 
 def test_keys_are_normalised_modifiers_first():

@@ -519,6 +519,64 @@ async function main() {
   await page.locator('.btn', { hasText: 'Карта' }).tap();
   ok('a button made in the editor presses its key', await until(async () => (await status()).recent[0].keys === 'M'));
 
+  // ---- screens: the buttons of one game in groups -----------------------------
+  const labels = (view, grid) => view.locator(`${grid} .btn .label`).allTextContents().then((all) => all.join());
+  await desk.click('#add-screen');
+  ok('the buttons made so far become the first screen',
+    (await desk.locator('#screen-tabs button').allTextContents()).join() === 'Экран 1,Экран 2');
+  await desk.keyboard.type('Бой'); // the name of the new screen is selected, ready to be replaced
+  await desk.click('#add-button');
+  await desk.keyboard.type('Огонь');
+  await desk.click('#record');
+  await desk.keyboard.press('KeyG');
+  await saved();
+  game = await stored('game');
+  ok('a new button lands on the open screen', game.screens.join() === 'Экран 1,Бой'
+    && game.buttons.map((button) => button.screen).join() === '0,0,1');
+  ok('the editor shows one screen at a time', (await labels(desk, '#preview')) === 'Огонь'
+    && (await desk.locator('#button-list li').count()) === 1);
+  ok('the phone gets a tab for every screen', await until(async () => (
+    (await page.locator('#screens button').allTextContents()).join() === 'Экран 1,Бой'
+  )));
+  ok('the phone stays on the first screen', (await labels(page, '#grid')) === 'Карта,Связь');
+
+  // A second finger switches the screen while the first one holds a button.
+  const link = await center(game.buttons[1].id);
+  const tabBox = await page.locator('#screens button').nth(1).boundingBox();
+  const tab = { x: Math.round(tabBox.x + tabBox.width / 2), y: Math.round(tabBox.y + tabBox.height / 2) };
+  await touch('touchStart', [{ ...link, id: 1 }]);
+  await until(async () => (await held()) !== '[]');
+  await touch('touchStart', [{ ...link, id: 1 }, { ...tab, id: 2 }]);
+  ok('a touch on a tab shows the other screen', await until(async () => (await labels(page, '#grid')) === 'Огонь'));
+  ok('a button held on the screen that went away is released', await until(async () => (await held()) === '[]'));
+  await touch('touchEnd', []);
+  await page.locator('.btn', { hasText: 'Огонь' }).tap();
+  ok('a button of the second screen presses its key', await until(async () => (await status()).recent[0].keys === 'G'));
+  await shot(page, 'phone-screens');
+  await shot(desk, 'pc-editor-screens', { fullPage: true });
+  await page.reload();
+  await page.waitForSelector('#status.online');
+  ok('the phone remembers the screen of the game', await until(async () => (await labels(page, '#grid')) === 'Огонь'));
+
+  await desk.selectOption('#button-screen', '0');
+  await saved();
+  ok('a button moves to another screen', (await stored('game')).buttons.every((button) => button.screen === 0)
+    && (await labels(desk, '#preview')) === 'Карта,Связь,Огонь');
+  ok('the phone says that a screen is empty', await until(async () => (
+    (await page.locator('#message').textContent()).includes('На этом экране')
+  )));
+  await desk.locator('#screen-tabs button', { hasText: 'Бой' }).click();
+  await desk.click('#delete-screen');
+  await saved();
+  ok('with one screen left the game has no screens again', (await stored('game')).screens.length === 0
+    && await desk.locator('#screen-tabs').isHidden());
+  ok('and the phone shows all the buttons without tabs', await until(async () => (
+    (await labels(page, '#grid')) === 'Карта,Связь,Огонь' && await page.locator('#screens').isHidden()
+  )));
+  await desk.locator('#button-list li', { hasText: 'Огонь' }).click();
+  await desk.click('#delete-button');
+  await saved();
+
   // ---- editor: pictures ----------------------------------------------------
   const pick = async (buttonId, file) => {
     const [chooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click(buttonId)]);

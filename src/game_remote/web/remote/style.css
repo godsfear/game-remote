@@ -129,6 +129,7 @@ body.offline #grid { opacity: 0.45; }
 
 @media (orientation: landscape) {
   header { padding-top: 6px; min-height: 40px; }
+  .screen-tabs button { min-height: 32px; padding: 3px 8px; }
 }
 
 /* Keeps the screen on (see app.js). Covers the page, stays behind everything. */

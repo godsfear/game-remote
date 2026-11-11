@@ -1,9 +1,12 @@
 import { applyTexts, setLanguage, t } from '/shared/i18n.js';
-import { layoutGrid, renderGrid, showBackground } from '/shared/panel-view.js';
+import {
+  layoutGrid, renderGrid, renderTabs, screenIndex, screenView, showBackground,
+} from '/shared/panel-view.js';
 
 const KEY_STORE = 'gameRemote.deviceKey';
 const OLD_KEY_STORE = 'gameRemote.key'; // the shared key of the first prototype
 const PANEL_STORE = 'gameRemote.panel';
+const SCREEN_STORE = 'gameRemote.screen.'; // + panel id: the screen last shown
 const VIBRATE_STORE = 'gameRemote.vibrate';
 const NOTICE_AFTER_MS = 4000; // a short hiccup needs no explanation
 const PING_EVERY_MS = 1000;
@@ -16,6 +19,7 @@ const el = {
   status: document.getElementById('status'),
   statusText: document.getElementById('status-text'),
   grid: document.getElementById('grid'),
+  screens: document.getElementById('screens'),
   message: document.getElementById('message'),
   list: document.getElementById('panel-list'),
   items: document.getElementById('panel-items'),
@@ -118,6 +122,21 @@ function showToast(text) {
 
 function currentPanel() {
   return panels.find((p) => p.id === panelId) || panels[0] || null;
+}
+
+// The buttons of the game can be grouped into screens; the phone remembers
+// which one it showed for every game.
+function currentScreen(panel) {
+  return screenIndex(panel, Number(store.get(SCREEN_STORE + panel.id) || 0));
+}
+
+function showScreen(index) {
+  const panel = currentPanel();
+  if (!panel || index === currentScreen(panel)) return;
+  releaseAll(); // a held button cannot stay down on a screen that is not shown
+  store.set(SCREEN_STORE + panel.id, String(index));
+  buzz(12);
+  render();
 }
 
 function send(message) {
@@ -300,18 +319,23 @@ function render() {
   document.title = panel ? `${panel.name} · Game Remote` : 'Game Remote';
   el.grid.replaceChildren();
   showBackground(document.body, panel ? panel.background : null);
+  const screens = (panel && panel.screens) || [];
+  el.screens.hidden = screens.length < 2;
   if (!panel) {
     if (key && online) showMessage(t('remote.noPanels'));
     return;
   }
-  if (!panel.buttons.length) {
-    showMessage(t('remote.emptyPanel'));
+  const screen = currentScreen(panel);
+  if (screens.length > 1) renderTabs(el.screens, screens, screen, showScreen, 'pointerdown');
+  const shown = screenView(panel, screen);
+  if (!shown.buttons.length) {
+    showMessage(t(panel.buttons.length ? 'remote.emptyScreen' : 'remote.emptyPanel'));
     return;
   }
   showMessage('');
-  const nodes = renderGrid(el.grid, panel, { wide: isWide() });
+  const nodes = renderGrid(el.grid, shown, { wide: isWide() });
   el.grid.classList.toggle('wide', isWide());
-  nodes.forEach((node, index) => listen(node, panel.buttons[index]));
+  nodes.forEach((node, index) => listen(node, shown.buttons[index]));
 }
 
 function isWide() {
@@ -322,7 +346,7 @@ function isWide() {
 function layout() {
   const panel = currentPanel();
   if (!panel) return;
-  layoutGrid(el.grid, panel, isWide());
+  layoutGrid(el.grid, screenView(panel, currentScreen(panel)), isWide());
   el.grid.classList.toggle('wide', isWide());
 }
 

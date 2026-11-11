@@ -99,7 +99,16 @@
       </section>
 
       <section id="buttons-card" hidden>
-        <h2 data-i18n="editor.buttons"></h2>
+        <div class="card-head">
+          <h2 data-i18n="editor.buttons"></h2>
+          <button id="add-screen" type="button" class="quiet" data-i18n="editor.addScreen"></button>
+        </div>
+        <div id="screen-tabs" hidden></div>
+        <div id="screen-row" hidden>
+          <input id="screen-name" type="text" maxlength="24" autocomplete="off">
+          <button id="delete-screen" type="button" class="quiet danger" data-i18n="editor.deleteScreen"></button>
+        </div>
+        <p class="hint" id="screens-hint" data-i18n="editor.screensHint" hidden></p>
         <ul id="button-list"></ul>
         <button id="add-button" type="button" data-i18n="editor.addButton"></button>
       </section>
@@ -133,6 +142,9 @@
           </div>
           <p class="hint" id="type-hint"></p>
         </div>
+        <label class="field" id="button-screen-field" hidden><span data-i18n="editor.screen"></span>
+          <select id="button-screen"></select>
+        </label>
         <div class="field"><span data-i18n="editor.color"></span>
           <div id="colors"></div>
         </div>
@@ -158,6 +170,7 @@
         </div>
         <div id="phone">
           <div id="phone-head"><span id="phone-name"></span><span class="dot"></span></div>
+          <div id="preview-screens" hidden></div>
           <div id="preview"></div>
           <p id="preview-empty" data-i18n="remote.emptyPanel" hidden></p>
         </div>

@@ -20,7 +20,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -44,6 +44,7 @@ _UPLOAD_RE = re.compile(r"^img-[0-9a-f]{12}\.(png|jpg|webp)$")
 # Device names of Windows: a folder cannot be called like one of them.
 _RESERVED_RE = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")
 MAX_IMAGE_BYTES = 2_000_000
+MAX_SCREENS = 8
 UNUSED_IMAGE_SECONDS = 600
 
 
@@ -74,6 +75,8 @@ class Button(BaseModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     # A file in the panel folder.
     image: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # Which of the panel's screens shows the button: an index into ``screens``.
+    screen: int = Field(default=0, ge=0, lt=MAX_SCREENS)
 
     @field_validator("keys")
     @classmethod
@@ -101,6 +104,11 @@ class Panel(BaseModel):
     # fill: the buttons share the whole screen. square: they stay square and
     # sit in the middle, so a background shows around them.
     shape: Literal["fill", "square"] = "fill"
+    # Names of the screens the buttons are grouped into; the phone switches
+    # between them with tabs. Empty: every button is on the one screen.
+    screens: list[Annotated[str, Field(min_length=1, max_length=24)]] = Field(
+        default_factory=list, max_length=MAX_SCREENS
+    )
     buttons: list[Button] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
@@ -110,6 +118,14 @@ class Panel(BaseModel):
             if button.id in seen:
                 raise ValueError(f"button id {button.id!r} is used twice")
             seen.add(button.id)
+        return self
+
+    @model_validator(mode="after")
+    def _buttons_on_existing_screens(self) -> Panel:
+        count = max(1, len(self.screens))
+        for button in self.buttons:
+            if button.screen >= count:
+                raise ValueError(f"button {button.id!r} is on a screen the panel does not have")
         return self
 
     def button(self, button_id: str) -> Button | None:
@@ -138,6 +154,7 @@ class LoadedPanel:
             "shape": self.panel.shape,
             "cover": self._url(self.panel.cover),
             "background": self._url(self.panel.background),
+            "screens": self.panel.screens,
             "buttons": [
                 {
                     "id": b.id,
@@ -145,6 +162,7 @@ class LoadedPanel:
                     "type": b.type,
                     "color": b.color,
                     "image": f"/panel-files/{self.id}/{b.image}" if b.image else None,
+                    "screen": b.screen,
                 }
                 for b in self.panel.buttons
             ],
@@ -164,6 +182,17 @@ class LoadedPanel:
             return None
         path = self.folder / name
         return path if path.is_file() else None
+
+
+def panel_text(panel: Panel) -> str:
+    """The panel as ``panel.json`` holds it. A panel without screens is written
+    without their fields, so the version before screens still reads the file."""
+    data = panel.model_dump(exclude_none=True)
+    if not panel.screens:
+        del data["screens"]
+        for button in data["buttons"]:
+            del button["screen"]
+    return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
 def short_error(exc: Exception) -> str:
@@ -245,10 +274,9 @@ class PanelStore:
             raise ValueError(f"bad panel id {panel_id!r}")
         folder = self.root / panel_id
         folder.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(panel.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
         # Write next to the file and swap, so a crash never leaves half a file.
         temporary = folder / (PANEL_FILE + ".tmp")
-        temporary.write_text(text + "\n", encoding="utf-8")
+        temporary.write_text(panel_text(panel), encoding="utf-8")
         for attempt in range(5):
             try:
                 os.replace(temporary, folder / PANEL_FILE)
@@ -335,8 +363,7 @@ class PanelStore:
             if _IMAGE_RE.match(path.name):
                 shutil.copyfile(path, draft / path.name)
         panel = sample_panel(russian=system_language() == "ru")
-        text = json.dumps(panel.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
-        (draft / PANEL_FILE).write_text(text + "\n", encoding="utf-8")
+        (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
         os.replace(draft, folder)
         return True
 
@@ -353,8 +380,9 @@ class PanelStore:
 
 
 def sample_panel(russian: bool) -> Panel:
-    """Star Citizen with the keys the game has by default. The button pictures
-    and the background lie in ``samples/star-citizen``."""
+    """Star Citizen with the keys the game has by default. The pictures lie in
+    ``samples/star-citizen``. The second screen is empty: it shows a new user
+    that the buttons of a game can be grouped."""
     labels = (
         ("Flight Ready", "ATC", "Шасси", "Фары", "VTOL", "Карта")
         if russian
@@ -372,7 +400,9 @@ def sample_panel(russian: bool) -> Panel:
         name="Star Citizen",
         columns=2,
         shape="square",
+        cover="cover.jpg",
         background="background.jpg",
+        screens=["Взлёт/Посадка", "Полёт"] if russian else ["Takeoff/Landing", "Flight"],
         buttons=[
             Button(id=bid, label=label, keys=keys, image=image)
             for label, (bid, keys, image) in zip(labels, spec, strict=True)

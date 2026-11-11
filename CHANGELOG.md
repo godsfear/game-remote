@@ -1,5 +1,13 @@
 # Изменения / Changelog
 
+## Не выпущено / Unreleased
+
+- Экраны: кнопки одной игры можно разложить по нескольким экранам (до восьми). На телефоне между ними переключают вкладки под названием игры, одним касанием. Игры без экранов работают как раньше.
+- У готовой панели Star Citizen появились обложка и два экрана: «Взлёт/Посадка» с шестью кнопками и пустой «Полёт».
+
+- Screens: the buttons of one game can be grouped into several screens (up to eight). On the phone, tabs under the game's name switch between them with one touch. Games without screens work as before.
+- The ready-made Star Citizen panel has a cover and two screens: "Takeoff/Landing" with the six buttons and an empty "Flight".
+
 ## 0.1.0
 
 Первая версия. Телефон или планшет становится пультом для игр на Windows: кнопки собираются на ПК, нажимаются в браузере телефона.

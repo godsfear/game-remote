@@ -1,10 +1,13 @@
 import { applyTexts, language as currentLanguage, setLanguage, t } from '/shared/i18n.js';
-import { renderGrid, showBackground } from '/shared/panel-view.js';
+import {
+  renderGrid, renderTabs, screenIndex, screenView, showBackground,
+} from '/shared/panel-view.js';
 
 const SAVE_DELAY_MS = 400;
 const PANEL_STORE = 'gameRemote.editor.panel';
 const IMAGE_MAX_SIDE = 512; // pictures are shrunk to this before upload
 const BACKGROUND_MAX_SIDE = 1920; // a background fills the whole phone screen
+const MAX_SCREENS = 8; // the PC accepts no more
 const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
 const el = Object.fromEntries([
@@ -18,7 +21,8 @@ const el = Object.fromEntries([
   'cover-remove', 'image-thumb', 'image-choose', 'image-remove', 'file', 'language',
   'device-list', 'copy-link', 'background-thumb', 'background-choose', 'background-remove',
   'shape', 'window-name', 'window-choose', 'window-remove', 'window-list',
-  'window-hint',
+  'window-hint', 'add-screen', 'screen-tabs', 'screen-row', 'screen-name', 'delete-screen',
+  'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -33,6 +37,7 @@ let panelErrors = {};
 let revision = 0; // the last state of the panel files this page knows
 let currentId = store.get(PANEL_STORE);
 let selectedId = null; // the button being edited
+let screen = 0; // the screen of the current game that the list and the preview show
 let keyLabels = new Map(); // key code -> short label
 let modifiers = [];
 let wide = false;
@@ -51,6 +56,12 @@ const dirty = new Set(); // ids of panels with changes not yet on the PC
 
 const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
 const selectedButton = () => currentPanel()?.buttons.find((b) => b.id === selectedId) || null;
+const currentScreen = () => (currentPanel() ? screenIndex(currentPanel(), screen) : 0);
+const screenButtons = (panel) => screenView(panel, currentScreen()).buttons;
+// A screen whose name was wiped keeps a name: the file needs one.
+const screenNames = (panel) => panel.screens.map(
+  (name, index) => name.trim() || t('editor.screenDefault', { n: index + 1 }),
+);
 
 async function api(path, options = {}) {
   const init = { ...options };
@@ -102,7 +113,7 @@ function takePanels(data) {
   panelErrors = data.errors;
   revision = data.revision;
   if (!currentPanel()) currentId = panels[0]?.id || null;
-  if (!selectedButton()) selectedId = null;
+  if ((selectedButton()?.screen || 0) !== currentScreen()) selectedId = null;
   renderAll();
 }
 
@@ -129,6 +140,7 @@ function forFile(panel) {
     cover: panel.cover || null,
     background: panel.background || null,
     shape: panel.shape || 'fill',
+    screens: screenNames(panel),
     buttons: panel.buttons.filter((button) => button.keys).map((button) => ({
       id: button.id,
       label: button.label,
@@ -136,6 +148,7 @@ function forFile(panel) {
       type: button.type,
       color: button.color || null,
       image: button.image || null,
+      screen: button.screen || 0,
     })),
   };
 }
@@ -210,6 +223,7 @@ function selectPanel(id) {
   windowChoice = null;
   currentId = id;
   selectedId = null;
+  screen = 0;
   store.set(PANEL_STORE, id || '');
   renderAll();
 }
@@ -219,6 +233,7 @@ async function addGame() {
   const data = await api('/api/panels', { method: 'POST', body: { name: t('editor.newGame') } });
   currentId = data.id;
   selectedId = null;
+  screen = 0;
   store.set(PANEL_STORE, currentId);
   takePanels(data);
   el['game-name'].focus();
@@ -232,6 +247,7 @@ async function deleteGame() {
   dirty.delete(panel.id);
   await api(`/api/panels/${panel.id}`, { method: 'DELETE' });
   currentId = null;
+  screen = 0;
   await loadPanels();
   setSaveState('saved');
 }
@@ -307,6 +323,59 @@ function changeColumns(step) {
   changed();
 }
 
+// ---- screens of the game ---------------------------------------------------
+
+// The buttons of one game can be grouped into screens; the phone switches
+// between them with the same tabs. A game without screens has them all on one.
+function renderScreens() {
+  const panel = currentPanel();
+  if (!panel) return;
+  const names = screenNames(panel);
+  el['add-screen'].disabled = names.length >= MAX_SCREENS;
+  for (const id of ['screen-tabs', 'screen-row', 'screens-hint']) el[id].hidden = !names.length;
+  renderTabs(el['screen-tabs'], names, currentScreen(), showScreen);
+  if (names.length && document.activeElement !== el['screen-name']) {
+    el['screen-name'].value = panel.screens[currentScreen()];
+  }
+}
+
+function showScreen(index) {
+  if (index === currentScreen()) return;
+  stopCapture();
+  screen = index;
+  selectedId = null;
+  renderAll();
+}
+
+function addScreen() {
+  const panel = currentPanel();
+  const name = () => t('editor.screenDefault', { n: panel.screens.length + 1 });
+  // The buttons made so far are a screen too, so it gets a name as well.
+  if (!panel.screens.length) panel.screens.push(name());
+  panel.screens.push(name());
+  showScreen(panel.screens.length - 1);
+  changed();
+  el['screen-name'].focus();
+  el['screen-name'].select();
+}
+
+function deleteScreen() {
+  const panel = currentPanel();
+  const index = currentScreen();
+  const count = screenButtons(panel).length;
+  const question = t('editor.confirmDeleteScreen', { name: screenNames(panel)[index], count });
+  if (count && !window.confirm(question)) return;
+  stopCapture();
+  panel.buttons = panel.buttons.filter((button) => (button.screen || 0) !== index);
+  for (const button of panel.buttons) if (button.screen > index) button.screen -= 1;
+  panel.screens.splice(index, 1);
+  if (panel.screens.length < 2) panel.screens = []; // one screen is a game without screens
+  screen = Math.max(0, index - 1);
+  selectedId = null;
+  renderAll();
+  changed();
+}
+
 // ---- list of buttons -------------------------------------------------------
 
 let dragged = null;
@@ -314,7 +383,8 @@ let dragged = null;
 function renderButtons() {
   const panel = currentPanel();
   if (!panel) return;
-  el['button-list'].replaceChildren(...panel.buttons.map((button, index) => {
+  const shown = screenButtons(panel);
+  el['button-list'].replaceChildren(...shown.map((button, index) => {
     const li = node('li');
     li.dataset.button = button.id;
     li.draggable = true;
@@ -330,7 +400,7 @@ function renderButtons() {
       arrow.type = 'button';
       arrow.title = t(key);
       arrow.setAttribute('aria-label', t(key));
-      arrow.disabled = index + step < 0 || index + step >= panel.buttons.length;
+      arrow.disabled = index + step < 0 || index + step >= shown.length;
       arrow.addEventListener('click', (event) => {
         event.stopPropagation();
         moveButton(index, index + step);
@@ -363,11 +433,14 @@ function renderButtons() {
   }));
 }
 
+// `from` and `to` count the buttons of the screen that is shown.
 function moveButton(from, to) {
   const panel = currentPanel();
-  if (from === to || to < 0 || to >= panel.buttons.length) return;
-  const [button] = panel.buttons.splice(from, 1);
-  panel.buttons.splice(to, 0, button);
+  const shown = screenButtons(panel);
+  if (from === to || to < 0 || to >= shown.length) return;
+  panel.buttons.splice(panel.buttons.indexOf(shown[from]), 1);
+  const target = panel.buttons.indexOf(shown[to]);
+  panel.buttons.splice(from < to ? target + 1 : target, 0, shown[from]);
   renderButtons();
   renderPreview();
   changed();
@@ -383,7 +456,10 @@ function selectButton(id) {
 
 function addButton() {
   const panel = currentPanel();
-  const button = { id: newButtonId(panel), label: '', keys: '', type: 'tap', color: null, image: null };
+  const button = {
+    id: newButtonId(panel), label: '', keys: '', type: 'tap', color: null, image: null,
+    screen: currentScreen(),
+  };
   panel.buttons.push(button);
   selectButton(button.id);
   renderGames();
@@ -430,6 +506,14 @@ function fillButtonForm() {
   el.colors.querySelector('input').value = button.color || '#2b3040';
   showThumb(el['image-thumb'], el['image-remove'], currentPanel(), button.image);
   fillManual(button);
+  const names = screenNames(currentPanel());
+  el['button-screen-field'].hidden = names.length < 2;
+  el['button-screen'].replaceChildren(...names.map((name, index) => {
+    const option = node('option', '', name);
+    option.value = String(index);
+    return option;
+  }));
+  el['button-screen'].value = String(button.screen || 0);
 }
 
 function showCombo() {
@@ -637,10 +721,14 @@ function renderPreview() {
   el['phone-name'].textContent = panel.name || 'Game Remote';
   el.phone.classList.toggle('wide', wide);
   showBackground(el.phone, panel.background ? filePath(panel, panel.background) : null);
+  const names = screenNames(panel);
+  el['preview-screens'].hidden = names.length < 2;
+  renderTabs(el['preview-screens'], names, currentScreen(), showScreen);
+  const buttons = screenButtons(panel);
   const shown = {
     columns: panel.columns,
     shape: panel.shape,
-    buttons: panel.buttons.map((button) => ({
+    buttons: buttons.map((button) => ({
       ...button,
       image: button.image ? filePath(panel, button.image) : null,
     })),
@@ -649,7 +737,7 @@ function renderPreview() {
   el.preview.hidden = shown.buttons.length === 0;
   const nodes = renderGrid(el.preview, shown, { wide });
   nodes.forEach((buttonNode, index) => {
-    const button = panel.buttons[index];
+    const button = buttons[index];
     buttonNode.classList.toggle('selected', button.id === selectedId);
     buttonNode.classList.toggle('draft', !button.keys); // not on the phone yet
     buttonNode.addEventListener('click', () => selectButton(button.id));
@@ -659,6 +747,7 @@ function renderPreview() {
 function renderAll() {
   renderGames();
   fillGameForm();
+  renderScreens();
   renderButtons();
   fillButtonForm();
   renderPreview();
@@ -821,6 +910,22 @@ el['game-name'].addEventListener('input', () => {
 el['columns-less'].addEventListener('click', () => changeColumns(-1));
 el['columns-more'].addEventListener('click', () => changeColumns(1));
 el['add-button'].addEventListener('click', addButton);
+el['add-screen'].addEventListener('click', addScreen);
+el['delete-screen'].addEventListener('click', deleteScreen);
+el['screen-name'].addEventListener('input', () => {
+  currentPanel().screens[currentScreen()] = el['screen-name'].value;
+  renderScreens();
+  fillButtonForm();
+  renderPreview();
+  changed();
+});
+el['button-screen'].addEventListener('change', () => {
+  const button = selectedButton();
+  button.screen = Number(el['button-screen'].value);
+  screen = button.screen; // follow the button to its new screen
+  renderAll();
+  if (button.keys) changed();
+});
 el['button-label'].addEventListener('input', () => {
   const button = selectedButton();
   button.label = el['button-label'].value;

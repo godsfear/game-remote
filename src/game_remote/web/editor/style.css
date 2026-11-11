@@ -77,6 +77,13 @@ summary { cursor: pointer; }
 .stepper button { width: 42px; padding: 7px 0; font-size: 18px; }
 .stepper output { min-width: 1.5em; text-align: center; font-size: 18px; font-weight: 600; }
 
+#screen-tabs { padding: 0; margin-bottom: 10px; }
+#screen-tabs button { min-height: 36px; }
+#screen-row { display: flex; gap: 10px; }
+#screen-row input { flex: 1; min-width: 0; width: auto; }
+#screens-hint { margin: 8px 0 14px; }
+#preview-screens { --gap: 6px; gap: 4px; }
+#preview-screens button { min-height: 22px; padding: 2px 4px; font-size: 10px; border-radius: 7px; cursor: pointer; }
 #button-list li { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; background: var(--raised); border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
 #button-list li[aria-current="true"] { border-color: var(--accent); background: #26304a; }
 #button-list li.dragging { opacity: 0.4; }

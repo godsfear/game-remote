@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 SAMPLES = ROOT / "src" / "game_remote" / "samples"
 BUTTON_SIDE = 512  # the same limit the editor uses for uploaded pictures
+COVER_SIDE = 256  # the cover is a small picture in the list of games
 
 
 def save(image: Image.Image, target: Path) -> None:
@@ -37,6 +38,11 @@ def star_citizen() -> None:
             )
     with Image.open(ASSETS / "star-citizen-phone-background.png") as image:
         save(image, target / "background.jpg")
+    with Image.open(ASSETS / "star-citizen-icon.png") as image:
+        save(
+            image.resize((COVER_SIDE, COVER_SIDE), Image.Resampling.LANCZOS),
+            target / "cover.jpg",
+        )
 
 
 if __name__ == "__main__":

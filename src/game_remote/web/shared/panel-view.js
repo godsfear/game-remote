@@ -52,6 +52,37 @@ export function showBackground(node, url) {
   node.style.backgroundImage = url ? `url("${url}")` : '';
 }
 
+// A panel may group its buttons into screens. This is the panel as one screen
+// shows it: the same panel with only that screen's buttons.
+export function screenView(panel, screen) {
+  return { ...panel, buttons: panel.buttons.filter((button) => (button.screen || 0) === screen) };
+}
+
+// The screen to show: `wanted` if the panel has it, else the first one.
+export function screenIndex(panel, wanted) {
+  const count = Math.max(1, (panel.screens || []).length);
+  return Number.isInteger(wanted) && wanted >= 0 && wanted < count ? wanted : 0;
+}
+
+// Fills `strip` with one tab per screen name; `pick(index)` runs on `event`.
+// The phone listens to the touch itself, like its buttons do: a second finger
+// makes no click while the first one holds a button.
+export function renderTabs(strip, names, current, pick, event = 'click') {
+  strip.classList.add('screen-tabs');
+  strip.replaceChildren(...names.map((name, index) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.textContent = name;
+    tab.dataset.screen = String(index);
+    tab.setAttribute('aria-pressed', String(index === current));
+    tab.addEventListener(event, (happened) => {
+      happened.preventDefault();
+      pick(index);
+    });
+    return tab;
+  }));
+}
+
 // Fills `grid` with the panel's buttons and returns the nodes in order.
 export function renderGrid(grid, panel, { wide = false } = {}) {
   layoutGrid(grid, panel, wide);
