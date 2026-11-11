@@ -15,8 +15,9 @@ from pydantic import BaseModel, Field, ValidationError
 from game_remote import __version__
 from game_remote.input.keys import MODIFIERS, SCAN_CODES, is_modifier, key_label
 from game_remote.netinfo import lan_addresses, local_name
-from game_remote.panels import Panel, short_error
+from game_remote.panels import MAX_IMAGE_BYTES, ImageError, Panel, short_error
 from game_remote.state import AppState
+from game_remote.user_settings import UserSettings, save_user_settings
 from game_remote.web import web_dir
 
 BODY = Body(...)
@@ -151,10 +152,36 @@ def create_editor_app(state: AppState) -> FastAPI:
         await state.hub.broadcast_panels()
         return {"ok": True, "revision": state.store.revision}
 
+    @app.post("/api/panels/{panel_id}/images", status_code=201)
+    async def upload_image(panel_id: str, request: Request) -> Response:
+        """The body is the picture itself. The page shrinks it before sending."""
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+            return JSONResponse({"error": "too_large"}, status_code=413)
+        try:
+            name = state.store.add_image(panel_id, await request.body())
+        except KeyError:
+            raise HTTPException(status_code=404) from None
+        except ImageError as exc:
+            status = 413 if str(exc) == "too_large" else 415
+            return JSONResponse({"error": str(exc)}, status_code=status)
+        return JSONResponse({"name": name}, status_code=201)
+
+    @app.get("/api/settings")
+    async def get_settings() -> dict:
+        return state.user.model_dump()
+
+    @app.put("/api/settings")
+    async def put_settings(body: UserSettings) -> dict:
+        state.user = body
+        save_user_settings(settings.user_settings_path, body)
+        await state.hub.set_language(body.forced_language)
+        return body.model_dump()
+
     @app.get("/panel-files/{panel_id}/{name}")
     async def panel_file(panel_id: str, name: str) -> FileResponse:
         loaded = state.store.get(panel_id)
-        path = loaded.image_path(name) if loaded else None
+        path = loaded.image_path(name, used_only=False) if loaded else None
         if path is None:
             raise HTTPException(status_code=404)
         return FileResponse(path, headers={"Cache-Control": "no-cache"})

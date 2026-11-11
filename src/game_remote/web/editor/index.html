@@ -62,6 +62,13 @@
             <button id="columns-more" type="button" aria-label="+">+</button>
           </div>
         </div>
+        <div class="field"><span data-i18n="editor.cover"></span>
+          <div class="image-row">
+            <span class="thumb" id="cover-thumb"></span>
+            <button id="cover-choose" type="button" data-i18n="editor.chooseImage"></button>
+            <button id="cover-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
+          </div>
+        </div>
         <button id="delete-game" type="button" class="quiet danger" data-i18n="editor.deleteGame"></button>
       </section>
 
@@ -103,6 +110,13 @@
         <div class="field"><span data-i18n="editor.color"></span>
           <div id="colors"></div>
         </div>
+        <div class="field"><span data-i18n="editor.image"></span>
+          <div class="image-row">
+            <span class="thumb" id="image-thumb"></span>
+            <button id="image-choose" type="button" data-i18n="editor.chooseImage"></button>
+            <button id="image-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
+          </div>
+        </div>
         <div class="row">
           <button id="duplicate-button" type="button" class="quiet" data-i18n="editor.duplicate"></button>
           <button id="delete-button" type="button" class="quiet danger" data-i18n="editor.deleteButton"></button>
@@ -132,11 +146,19 @@
   </main>
   <footer>
     <span id="version"></span>
+    <label id="language-row"><span data-i18n="editor.language"></span>
+      <select id="language">
+        <option value="auto" data-i18n="editor.languageAuto"></option>
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+      </select>
+    </label>
     <span class="row">
       <button id="open-folder" type="button" class="quiet" data-i18n="editor.openFolder"></button>
       <button id="quit" type="button" class="quiet" data-i18n="editor.quit"></button>
     </span>
   </footer>
+  <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
   <script type="module" src="app.js"></script>
 </body>
 </html>

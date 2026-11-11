@@ -16,8 +16,9 @@ TEXTS = {
 }
 
 
-def tray_texts() -> dict[str, str]:
-    return TEXTS[system_language()]
+def tray_texts(language: str | None = None) -> dict[str, str]:
+    """Menu texts in the language chosen in the editor, else the system's."""
+    return TEXTS[language if language in TEXTS else system_language()]
 
 
 def make_icon_image(size: int = 64):
@@ -37,11 +38,13 @@ def make_icon_image(size: int = 64):
     return image
 
 
-def create_tray(on_open: Callable[[], None], on_quit: Callable[[], None]):
+def create_tray(
+    on_open: Callable[[], None], on_quit: Callable[[], None], language: str | None = None
+):
     """Build the icon. Call ``.run_detached()`` to show it and ``.stop()`` to remove it."""
     import pystray
 
-    texts = tray_texts()
+    texts = tray_texts(language)
 
     def quit_clicked(icon, _item) -> None:
         on_quit()
@@ -54,12 +57,14 @@ def create_tray(on_open: Callable[[], None], on_quit: Callable[[], None]):
     return pystray.Icon("GameRemote", make_icon_image(), "Game Remote", menu)
 
 
-def start_tray(on_open: Callable[[], None], on_quit: Callable[[], None]):
+def start_tray(
+    on_open: Callable[[], None], on_quit: Callable[[], None], language: str | None = None
+):
     """Show the tray icon if this platform has one. Returns the icon or None."""
     if sys.platform != "win32":
         return None
     try:
-        icon = create_tray(on_open, on_quit)
+        icon = create_tray(on_open, on_quit, language)
         icon.run_detached()
         return icon
     except Exception:  # the program is still usable from the browser without a tray icon

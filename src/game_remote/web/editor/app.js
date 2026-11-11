@@ -1,8 +1,9 @@
-import { applyTexts, t } from '/shared/i18n.js';
+import { applyTexts, setLanguage, t } from '/shared/i18n.js';
 import { renderGrid } from '/shared/panel-view.js';
 
 const SAVE_DELAY_MS = 400;
 const PANEL_STORE = 'gameRemote.editor.panel';
+const IMAGE_MAX_SIDE = 512; // pictures are shrunk to this before upload
 const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
 const el = Object.fromEntries([
@@ -12,7 +13,8 @@ const el = Object.fromEntries([
   'button-list', 'add-button', 'button-card', 'button-label', 'combo', 'record', 'combo-error',
   'manual', 'manual-key', 'button-type', 'type-hint', 'colors', 'duplicate-button',
   'delete-button', 'preview-card', 'rotate', 'phone', 'phone-name', 'preview', 'preview-empty',
-  'recent', 'release', 'version', 'open-folder', 'quit',
+  'recent', 'release', 'version', 'open-folder', 'quit', 'cover-thumb', 'cover-choose',
+  'cover-remove', 'image-thumb', 'image-choose', 'image-remove', 'file', 'language',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -110,6 +112,7 @@ function forFile(panel) {
     name: panel.name.trim(),
     columns: panel.columns,
     window: panel.window || null,
+    cover: panel.cover || null,
     buttons: panel.buttons.filter((button) => button.keys).map((button) => ({
       id: button.id,
       label: button.label,
@@ -154,6 +157,11 @@ function renderGames() {
     button.type = 'button';
     button.dataset.panel = panel.id;
     button.setAttribute('aria-current', String(panel.id === currentId));
+    if (panel.cover) {
+      const cover = node('span', 'cover');
+      cover.style.backgroundImage = imageUrl(panel, panel.cover);
+      button.append(cover);
+    }
     button.append(
       node('span', 'name', panel.name || t('editor.unnamed')),
       node('span', 'count', String(panel.buttons.length)),
@@ -210,6 +218,7 @@ function fillGameForm() {
   el.columns.textContent = String(panel.columns);
   el['columns-less'].disabled = panel.columns <= 1;
   el['columns-more'].disabled = panel.columns >= 8;
+  showThumb(el['cover-thumb'], el['cover-remove'], panel, panel.cover);
 }
 
 function changeColumns(step) {
@@ -341,6 +350,7 @@ function fillButtonForm() {
     swatch.setAttribute('aria-pressed', String((swatch.dataset.color || null) === (button.color || null)));
   }
   el.colors.querySelector('input').value = button.color || '#2b3040';
+  showThumb(el['image-thumb'], el['image-remove'], currentPanel(), button.image);
   fillManual(button);
 }
 
@@ -467,6 +477,80 @@ function buildColors() {
   el.colors.replaceChildren(none, ...swatches, custom);
 }
 
+// ---- pictures --------------------------------------------------------------
+
+const filePath = (panel, name) => `/panel-files/${panel.id}/${encodeURIComponent(name)}`;
+const imageUrl = (panel, name) => `url("${filePath(panel, name)}")`;
+
+function showThumb(thumb, removeButton, panel, name) {
+  thumb.style.backgroundImage = name ? imageUrl(panel, name) : '';
+  thumb.classList.toggle('set', Boolean(name));
+  removeButton.hidden = !name;
+}
+
+// A photo from a camera is far bigger than a button on a phone screen, so the
+// page shrinks the picture and sends the small copy.
+async function shrink(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error(t('editor.imageError'));
+  }
+  const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  for (const type of ['image/webp', 'image/png']) {
+    const blob = await new Promise((resolve) => { canvas.toBlob(resolve, type, 0.85); });
+    if (blob && blob.type === type) return blob;
+  }
+  throw new Error(t('editor.imageError'));
+}
+
+let fileTarget = null; // 'cover' or the id of the button that gets the picture
+
+function chooseFile(target) {
+  fileTarget = target;
+  el.file.value = '';
+  el.file.click();
+}
+
+async function fileChosen() {
+  const [file] = el.file.files;
+  const panel = currentPanel();
+  if (!file || !panel) return;
+  const blob = await shrink(file);
+  const response = await fetch(`/api/panels/${panel.id}/images`, {
+    method: 'POST',
+    body: blob,
+    headers: { 'Content-Type': blob.type },
+  });
+  if (!response.ok) throw new Error(t('editor.imageError'));
+  const { name } = await response.json();
+  setPicture(panel, fileTarget, name);
+}
+
+function setPicture(panel, target, name) {
+  if (target === 'cover') {
+    panel.cover = name;
+  } else {
+    const button = panel.buttons.find((candidate) => candidate.id === target);
+    if (!button) return;
+    button.image = name;
+    if (!button.keys) { // a draft: nothing to save yet
+      renderAll();
+      return;
+    }
+  }
+  renderAll();
+  dirty.add(panel.id);
+  setSaveState('pending');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, SAVE_DELAY_MS);
+}
+
 // ---- preview ---------------------------------------------------------------
 
 function renderPreview() {
@@ -478,7 +562,7 @@ function renderPreview() {
     columns: panel.columns,
     buttons: panel.buttons.map((button) => ({
       ...button,
-      image: button.image ? `/panel-files/${panel.id}/${encodeURIComponent(button.image)}` : null,
+      image: button.image ? filePath(panel, button.image) : null,
     })),
   };
   el['preview-empty'].hidden = shown.buttons.length > 0;
@@ -602,6 +686,15 @@ for (const box of el.manual.querySelectorAll('input[data-mod]')) box.addEventLis
 el['manual-key'].addEventListener('change', manualChanged);
 el['duplicate-button'].addEventListener('click', duplicateButton);
 el['delete-button'].addEventListener('click', deleteButton);
+el['cover-choose'].addEventListener('click', () => chooseFile('cover'));
+el['cover-remove'].addEventListener('click', () => setPicture(currentPanel(), 'cover', null));
+el['image-choose'].addEventListener('click', () => chooseFile(selectedId));
+el['image-remove'].addEventListener('click', () => setPicture(currentPanel(), selectedId, null));
+el.file.addEventListener('change', report(fileChosen));
+el.language.addEventListener('change', report(async () => {
+  const saved = await api('/api/settings', { method: 'PUT', body: { language: el.language.value } });
+  useLanguage(saved.language);
+}));
 el.rotate.addEventListener('click', () => { wide = !wide; renderPreview(); });
 el.address.addEventListener('change', showQr);
 el['show-qr'].addEventListener('click', () => { showQrAnyway = !showQrAnyway; renderConnect(); });
@@ -623,7 +716,23 @@ window.addEventListener('pagehide', () => {
   }
 });
 
+function useLanguage(language) {
+  setLanguage(language);
+  el.language.value = language;
+  applyTexts();
+  buildColors();
+  if (panels.length || Object.keys(panelErrors).length) renderAll();
+  renderConnect();
+  loadLinks().catch(() => {});
+  refresh();
+}
+
 async function start() {
+  try {
+    const chosen = await api('/api/settings');
+    setLanguage(chosen.language);
+    el.language.value = chosen.language;
+  } catch { /* keep the browser's language */ }
   applyTexts();
   buildColors();
   const keys = await api('/api/keys');

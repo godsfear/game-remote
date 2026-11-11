@@ -56,6 +56,10 @@ class Settings:
         return self.data_dir / "panels"
 
     @property
+    def user_settings_path(self) -> Path:
+        return self.data_dir / "settings.json"
+
+    @property
     def trash_dir(self) -> Path:
         return self.data_dir / "trash"
 

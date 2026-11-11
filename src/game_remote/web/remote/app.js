@@ -1,4 +1,4 @@
-import { applyTexts, t } from '/shared/i18n.js';
+import { applyTexts, setLanguage, t } from '/shared/i18n.js';
 import { columnsFor, renderGrid } from '/shared/panel-view.js';
 
 const KEY_STORE = 'gameRemote.key';
@@ -49,7 +49,10 @@ function takeKeyFromLink() {
   return value;
 }
 
+let statusState = 'offline';
+
 function setStatus(state) {
+  statusState = state;
   online = state === 'online';
   el.status.className = state;
   el.statusText.textContent = t(`remote.${state}`);
@@ -113,8 +116,19 @@ function connect() {
   };
 }
 
+// The PC can set one language for every device; null leaves it to the browser.
+function useLanguage(code) {
+  setLanguage(code);
+  applyTexts();
+  setStatus(statusState);
+}
+
 function onMessage(message) {
-  if (message.type === 'welcome' || message.type === 'panels') {
+  if (message.type === 'settings') {
+    useLanguage(message.language);
+    render();
+  } else if (message.type === 'welcome' || message.type === 'panels') {
+    if (message.type === 'welcome') useLanguage(message.language);
     if (message.type === 'welcome') {
       retryMs = 500;
       setStatus('online');
@@ -239,7 +253,16 @@ function openList() {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = panel.name;
+    if (panel.cover) {
+      const cover = document.createElement('img');
+      cover.src = panel.cover;
+      cover.alt = '';
+      cover.onerror = () => cover.remove();
+      button.append(cover);
+    }
+    const name = document.createElement('span');
+    name.textContent = panel.name;
+    button.append(name);
     button.setAttribute('aria-selected', String(panel.id === currentPanel().id));
     button.addEventListener('click', () => {
       panelId = panel.id;
