@@ -7,7 +7,7 @@
 
 Game Remote превращает телефон или планшет в пульт для игр на Windows. Кнопки настраиваются в редакторе на ПК и отображаются в браузере мобильного устройства. Например, кнопка «Карта» может отправлять клавишу `M` в активное окно игры.
 
-Проект в разработке: [концепт](CONCEPT.md), [план](PLAN.md). Уже есть прототип, которым можно играть: панель пока описывается файлом, редактора кнопок ещё нет. [Как попробовать](docs/prototype.md). В первую версию входят:
+Проект в разработке: [концепт](CONCEPT.md), [план](PLAN.md). Уже есть прототип, которым можно играть, с редактором игр и кнопок. [Как попробовать](docs/prototype.md). В первую версию входят:
 
 - На телефон ничего не ставится: пульт открывается в браузере.
 - Кнопки двух типов: «нажать» и «держать», можно нажимать несколько сразу.
@@ -20,7 +20,7 @@ Game Remote превращает телефон или планшет в пул�
 
 Game Remote turns your phone or tablet into a control panel for Windows games. Configure buttons in the PC editor, then use them in your mobile browser. For example, a Map button can send the `M` key to the active game window.
 
-Work in progress: [concept](CONCEPT.md) and [plan](PLAN.md), both in Russian. A playable prototype exists: panels are JSON files for now, the button editor comes next. See [how to try it](docs/prototype.md) (in Russian). The first release is planned to include:
+Work in progress: [concept](CONCEPT.md) and [plan](PLAN.md), both in Russian. A playable prototype with an editor for games and buttons exists. See [how to try it](docs/prototype.md) (in Russian). The first release is planned to include:
 
 - Nothing to install on the phone: the panel opens in the browser.
 - Two button types, tap and hold, with multi-touch.

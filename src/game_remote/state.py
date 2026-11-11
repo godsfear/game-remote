@@ -42,7 +42,7 @@ def build_state(
     settings.ensure_dirs()
     backend = RecordingBackend() if fake_input else default_backend()
     controller = InputController(backend, tap_ms=tap_ms)
-    store = PanelStore(settings.panels_dir)
+    store = PanelStore(settings.panels_dir, settings.trash_dir)
     store.ensure_demo()
     store.load()
     access_key = load_or_create_key(settings.data_dir)

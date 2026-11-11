@@ -4,41 +4,124 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Game Remote</title>
+  <link rel="stylesheet" href="/shared/panel-view.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>Game Remote</h1>
-    <p data-i18n="editor.subtitle"></p>
+    <div>
+      <h1>Game Remote</h1>
+      <p data-i18n="editor.subtitle"></p>
+    </div>
+    <p id="save-state" role="status"></p>
   </header>
   <p id="fake" class="banner" data-i18n="editor.fakeInput" hidden></p>
   <p id="offline" class="banner bad" data-i18n="editor.offline" hidden></p>
   <main>
-    <section id="connect">
-      <h2 data-i18n="editor.connect"></h2>
-      <div id="qr-box"><img id="qr" alt="QR" hidden><p id="no-address" data-i18n="editor.noAddress" hidden></p></div>
-      <p class="hint" data-i18n="editor.connectHint"></p>
-      <label id="address-row"><span data-i18n="editor.address"></span>
-        <select id="address"></select>
-      </label>
-      <p id="phones" class="waiting" role="status"></p>
-      <details>
-        <summary data-i18n="editor.trouble"></summary>
-        <ul>
-          <li data-i18n="editor.trouble1"></li>
-          <li data-i18n="editor.trouble2"></li>
-          <li data-i18n="editor.trouble3"></li>
-          <li data-i18n="editor.trouble4"></li>
-        </ul>
-      </details>
-    </section>
-    <div class="column">
-      <section>
-        <h2 data-i18n="editor.panels"></h2>
-        <ul id="panels"></ul>
-        <p class="hint" data-i18n="editor.files"></p>
-        <p class="hint"><span data-i18n="editor.folder"></span>: <code id="folder"></code></p>
-        <button id="open-folder" type="button" data-i18n="editor.openFolder"></button>
+    <div class="column" id="left">
+      <section id="games">
+        <h2 data-i18n="editor.games"></h2>
+        <ul id="game-list"></ul>
+        <ul id="panel-errors"></ul>
+        <button id="add-game" type="button" data-i18n="editor.addGame"></button>
+      </section>
+      <section id="connect">
+        <h2 data-i18n="editor.connect"></h2>
+        <p id="phones" class="waiting" role="status"></p>
+        <button id="show-qr" type="button" class="quiet" data-i18n="editor.showQr" hidden></button>
+        <div id="connect-body">
+          <div id="qr-box"><img id="qr" alt="QR" hidden><p id="no-address" data-i18n="editor.noAddress" hidden></p></div>
+          <p class="hint" data-i18n="editor.connectHint"></p>
+          <label id="address-row"><span data-i18n="editor.address"></span>
+            <select id="address"></select>
+          </label>
+          <details>
+            <summary data-i18n="editor.trouble"></summary>
+            <ul>
+              <li data-i18n="editor.trouble1"></li>
+              <li data-i18n="editor.trouble2"></li>
+              <li data-i18n="editor.trouble3"></li>
+              <li data-i18n="editor.trouble4"></li>
+            </ul>
+          </details>
+        </div>
+      </section>
+    </div>
+
+    <div class="column" id="middle">
+      <p id="no-game" class="empty" data-i18n="editor.noGame" hidden></p>
+      <section id="game-card" hidden>
+        <h2 data-i18n="editor.game"></h2>
+        <label class="field"><span data-i18n="editor.gameName"></span>
+          <input id="game-name" type="text" maxlength="60" autocomplete="off">
+        </label>
+        <div class="field"><span data-i18n="editor.columns"></span>
+          <div class="stepper">
+            <button id="columns-less" type="button" aria-label="−">−</button>
+            <output id="columns"></output>
+            <button id="columns-more" type="button" aria-label="+">+</button>
+          </div>
+        </div>
+        <button id="delete-game" type="button" class="quiet danger" data-i18n="editor.deleteGame"></button>
+      </section>
+
+      <section id="buttons-card" hidden>
+        <h2 data-i18n="editor.buttons"></h2>
+        <ul id="button-list"></ul>
+        <button id="add-button" type="button" data-i18n="editor.addButton"></button>
+      </section>
+
+      <section id="button-card" hidden>
+        <h2 data-i18n="editor.button"></h2>
+        <label class="field"><span data-i18n="editor.label"></span>
+          <input id="button-label" type="text" maxlength="40" autocomplete="off">
+        </label>
+        <div class="field"><span data-i18n="editor.keys"></span>
+          <div id="combo-row">
+            <output id="combo"></output>
+            <button id="record" type="button" data-i18n="editor.record"></button>
+          </div>
+          <p id="combo-error" class="error-text" hidden></p>
+          <details id="manual">
+            <summary data-i18n="editor.manual"></summary>
+            <p class="hint" data-i18n="editor.manualHint"></p>
+            <div id="manual-row">
+              <label><input type="checkbox" data-mod="ControlLeft"> Ctrl</label>
+              <label><input type="checkbox" data-mod="ShiftLeft"> Shift</label>
+              <label><input type="checkbox" data-mod="AltLeft"> Alt</label>
+              <select id="manual-key"></select>
+            </div>
+          </details>
+        </div>
+        <div class="field"><span data-i18n="editor.type"></span>
+          <div class="segmented" id="button-type">
+            <button type="button" data-type="tap" data-i18n="editor.typeTap"></button>
+            <button type="button" data-type="hold" data-i18n="editor.typeHold"></button>
+          </div>
+          <p class="hint" id="type-hint"></p>
+        </div>
+        <div class="field"><span data-i18n="editor.color"></span>
+          <div id="colors"></div>
+        </div>
+        <div class="row">
+          <button id="duplicate-button" type="button" class="quiet" data-i18n="editor.duplicate"></button>
+          <button id="delete-button" type="button" class="quiet danger" data-i18n="editor.deleteButton"></button>
+        </div>
+      </section>
+    </div>
+
+    <div class="column" id="right">
+      <section id="preview-card" hidden>
+        <div class="card-head">
+          <h2 data-i18n="editor.preview"></h2>
+          <button id="rotate" type="button" class="quiet" data-i18n="editor.rotate"></button>
+        </div>
+        <div id="phone">
+          <div id="phone-head"><span id="phone-name"></span><span class="dot"></span></div>
+          <div id="preview"></div>
+          <p id="preview-empty" data-i18n="remote.emptyPanel" hidden></p>
+        </div>
+        <p class="hint" data-i18n="editor.previewHint"></p>
       </section>
       <section>
         <h2 data-i18n="editor.recent"></h2>
@@ -49,7 +132,10 @@
   </main>
   <footer>
     <span id="version"></span>
-    <button id="quit" type="button" class="quiet" data-i18n="editor.quit"></button>
+    <span class="row">
+      <button id="open-folder" type="button" class="quiet" data-i18n="editor.openFolder"></button>
+      <button id="quit" type="button" class="quiet" data-i18n="editor.quit"></button>
+    </span>
   </footer>
   <script type="module" src="app.js"></script>
 </body>

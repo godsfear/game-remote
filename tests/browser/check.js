@@ -218,14 +218,83 @@ async function main() {
   const desk = await pc.newPage();
   watch(desk, 'pc');
   await desk.goto(editor);
-  ok('the QR code is drawn', await until(() => desk.evaluate(() => document.getElementById('qr').naturalWidth > 0)));
+  desk.on('dialog', (dialog) => dialog.accept());
   ok('PC page shows the connected phone', await until(async () => (await desk.locator('#phones').textContent()).includes('1')));
-  ok('PC page shows the broken panel', await until(async () => (await desk.locator('#panels li.error').count()) === 1));
-  ok('PC page lists recent presses', (await desk.locator('#recent li').count()) > 1);
+  ok('the QR code folds away once a phone is connected', await desk.locator('#qr').isHidden());
+  await desk.click('#show-qr');
+  ok('the QR code is drawn', await until(() => desk.evaluate(() => document.getElementById('qr').naturalWidth > 0)));
   ok('the address list fits its card', await desk.evaluate(() => (
     document.getElementById('address').getBoundingClientRect().right
     <= document.getElementById('connect').getBoundingClientRect().right
   )));
+  await desk.click('#show-qr');
+  ok('PC page shows the broken panel', await until(async () => (await desk.locator('#panel-errors li').count()) === 1));
+  ok('PC page lists recent presses', (await desk.locator('#recent li').count()) > 1);
+
+  // ---- editor: a new game with two buttons ----------------------------------
+  const saved = () => desk.waitForFunction(() => document.getElementById('save-state').textContent === 'Сохранено');
+  const stored = async (id) => (await (await fetch(`${editor}/api/panels`)).json()).panels.find((p) => p.id === id);
+  await desk.click('#add-game');
+  await desk.waitForFunction(() => document.activeElement?.id === 'game-name');
+  await desk.keyboard.type('Elite');
+  await desk.click('#add-button');
+  await desk.keyboard.type('Связь');
+  ok('a button without a key is not saved', (await stored('game')).buttons.length === 0);
+  await desk.click('#record');
+  await desk.keyboard.down('ControlLeft');
+  await desk.keyboard.down('KeyR');
+  ok('the shortcut shows while it is recorded', (await desk.locator('#combo').textContent()) === 'Ctrl+R');
+  await desk.keyboard.up('KeyR');
+  await desk.keyboard.up('ControlLeft');
+  await desk.click('#button-type [data-type="hold"]');
+  await desk.click('#colors button[data-color="#2f9e62"]');
+  await desk.click('#add-button');
+  await desk.keyboard.type('Карта');
+  await desk.click('#record');
+  await desk.keyboard.press('KeyM');
+  await saved();
+  let game = await stored('game');
+  ok('the editor saves by itself', game.name === 'Elite' && game.buttons.length === 2);
+  ok('recorded shortcut is stored with modifiers first', game.buttons[0].keys === 'ControlLeft+KeyR'
+    && game.buttons[0].type === 'hold' && game.buttons[0].color === '#2f9e62' && game.buttons[1].keys === 'KeyM');
+  ok('preview is drawn by the same code as the phone', (await desk.locator('#preview .btn.hold .label').textContent()) === 'Связь');
+
+  await desk.locator('#button-list li').nth(1).locator('.move button').first().click();
+  await desk.click('#columns-less');
+  await saved();
+  game = await stored('game');
+  ok('order and columns are saved', game.buttons[0].label === 'Карта' && game.columns === 2);
+
+  await desk.locator('#preview .btn', { hasText: 'Связь' }).click();
+  await desk.click('#manual summary');
+  await desk.check('#manual input[data-mod="ShiftLeft"]');
+  await desk.selectOption('#manual-key', 'F5');
+  await saved();
+  ok('a shortcut can be chosen by hand', (await stored('game')).buttons[1].keys === 'ControlLeft+ShiftLeft+F5');
+  await shot(desk, 'pc-editor', { fullPage: true });
+
+  // The phone got all of it without a reload.
+  ok('the phone offers the new game', await until(() => page.locator('#panel-name.many').count()));
+  await page.locator('#panel-name').tap();
+  await page.locator('#panel-items button', { hasText: 'Elite' }).tap();
+  ok('the phone shows the new buttons in the new order', await until(async () => (
+    (await page.locator('.btn .label').allTextContents()).join() === 'Карта,Связь'
+  )));
+  ok('the phone uses the new column count', (await page.locator('#grid').evaluate((grid) => getComputedStyle(grid).getPropertyValue('--cols').trim())) === '2');
+  await page.locator('.btn', { hasText: 'Карта' }).tap();
+  ok('a button made in the editor presses its key', await until(async () => (await status()).recent[0].keys === 'M'));
+
+  // A file edited by hand shows up in the open editor.
+  const demoFile = path.join(dataDir, 'panels', 'demo', 'panel.json');
+  const demo = JSON.parse(fs.readFileSync(demoFile, 'utf8'));
+  fs.writeFileSync(demoFile, JSON.stringify({ ...demo, name: 'Демо из файла' }));
+  ok('the editor notices a file edited by hand', await until(async () => (
+    (await desk.locator('#game-list').textContent()).includes('Демо из файла')
+  )));
+
+  await desk.click('#delete-game');
+  ok('a deleted game leaves the phone', await until(async () => (await page.locator('#panel-name.many').count()) === 0));
+  ok('a deleted game is kept in the trash folder', fs.readdirSync(path.join(dataDir, 'trash')).length === 1);
   await shot(desk, 'pc-page', { fullPage: true });
 
   // ---- wrong or missing key -------------------------------------------------

@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -83,6 +86,10 @@ class LoadedPanel:
     folder: Path
     panel: Panel
 
+    def full(self) -> dict:
+        """Everything, for the editor on the PC."""
+        return {"id": self.id, **self.panel.model_dump()}
+
     def public(self) -> dict:
         """What the phone needs to draw the panel. Key combos stay on the PC."""
         return {
@@ -109,7 +116,7 @@ class LoadedPanel:
         return path if path.is_file() else None
 
 
-def _short_error(exc: Exception) -> str:
+def short_error(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
         first = exc.errors()[0]
         where = ".".join(str(part) for part in first["loc"])
@@ -120,10 +127,15 @@ def _short_error(exc: Exception) -> str:
 class PanelStore:
     """Reads every panel folder. Files with mistakes are reported, not fatal."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, trash: Path | None = None) -> None:
         self.root = root
+        # Deleted panels are moved here, not erased.
+        self.trash = trash or root.parent / "trash"
         self.panels: dict[str, LoadedPanel] = {}
         self.errors: dict[str, str] = {}
+        # Grows every time the panels are read again; the editor uses it to
+        # notice changes it did not make itself.
+        self.revision = 0
         self._signature: tuple = ()
 
     def _files(self) -> list[Path]:
@@ -155,9 +167,10 @@ class PanelStore:
                 data = json.loads(path.read_text(encoding="utf-8-sig"))
                 panels[panel_id] = LoadedPanel(panel_id, path.parent, Panel.model_validate(data))
             except (OSError, ValueError) as exc:
-                errors[panel_id] = _short_error(exc)
+                errors[panel_id] = short_error(exc)
                 log.warning("Panel %s was not loaded: %s", panel_id, errors[panel_id])
         self.panels, self.errors, self._signature = panels, errors, signature
+        self.revision += 1
 
     def reload_if_changed(self) -> bool:
         if self.signature() == self._signature:
@@ -170,6 +183,55 @@ class PanelStore:
 
     def public(self) -> list[dict]:
         return [p.public() for p in self.panels.values()]
+
+    # -- changes made by the editor ---------------------------------------------
+
+    def exists(self, panel_id: str) -> bool:
+        return bool(_ID_RE.match(panel_id)) and (self.root / panel_id / PANEL_FILE).is_file()
+
+    def save(self, panel_id: str, panel: Panel) -> None:
+        """Write the panel file and read the panels again."""
+        if not _ID_RE.match(panel_id):
+            raise ValueError(f"bad panel id {panel_id!r}")
+        folder = self.root / panel_id
+        folder.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(panel.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+        # Write next to the file and swap, so a crash never leaves half a file.
+        temporary = folder / (PANEL_FILE + ".tmp")
+        temporary.write_text(text + "\n", encoding="utf-8")
+        for attempt in range(5):
+            try:
+                os.replace(temporary, folder / PANEL_FILE)
+                break
+            except PermissionError:  # Windows: antivirus or an editor holds the file
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
+        self.load()
+
+    def create(self, name: str) -> str:
+        """Create an empty panel; returns its id (the folder name)."""
+        base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30].strip("-") or "game"
+        panel_id, number = base, 1
+        while (self.root / panel_id).exists():
+            number += 1
+            panel_id = f"{base}-{number}"
+        self.save(panel_id, Panel(name=name))
+        return panel_id
+
+    def delete(self, panel_id: str) -> bool:
+        """Move the panel folder to the trash folder."""
+        if not self.exists(panel_id):
+            return False
+        self.trash.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target, number = self.trash / f"{panel_id}-{stamp}", 1
+        while target.exists():
+            number += 1
+            target = self.trash / f"{panel_id}-{stamp}-{number}"
+        shutil.move(str(self.root / panel_id), str(target))
+        self.load()
+        return True
 
     def ensure_demo(self) -> bool:
         """On the very first run, create a demo panel so the phone has something to show."""
