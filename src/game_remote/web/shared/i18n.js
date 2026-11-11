@@ -82,6 +82,13 @@ const TEXTS = {
     'editor.save.saved': 'Saved',
     'editor.save.error': 'Not saved:',
     'editor.needName': 'the game needs a name.',
+    'editor.cover': 'Cover',
+    'editor.image': 'Picture',
+    'editor.chooseImage': 'Choose a file',
+    'editor.removeImage': 'Remove',
+    'editor.imageError': 'This file is not a picture the program can read. Use PNG, JPEG or WebP.',
+    'editor.language': 'Language',
+    'editor.languageAuto': 'Auto: as in the browser',
   },
   ru: {
     'remote.scan': 'Отсканируйте QR-код на экране ПК, чтобы подключить это устройство.',
@@ -164,6 +171,13 @@ const TEXTS = {
     'editor.save.saved': 'Сохранено',
     'editor.save.error': 'Не сохранено:',
     'editor.needName': 'у игры должно быть название.',
+    'editor.cover': 'Обложка',
+    'editor.image': 'Картинка',
+    'editor.chooseImage': 'Выбрать файл',
+    'editor.removeImage': 'Убрать',
+    'editor.imageError': 'Этот файл не удалось прочитать как картинку. Подойдут PNG, JPEG и WebP.',
+    'editor.language': 'Язык',
+    'editor.languageAuto': 'Авто: как в браузере',
   },
 };
 
@@ -178,6 +192,12 @@ export function pickLanguage(preferred = navigator.languages || [navigator.langu
 }
 
 let current = pickLanguage();
+
+// A language chosen on the PC wins over the browser's; null or "auto" gives
+// the choice back to the browser.
+export function setLanguage(code) {
+  current = TEXTS[code] ? code : pickLanguage();
+}
 
 export function language() {
   return current;

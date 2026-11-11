@@ -106,7 +106,16 @@ summary { cursor: pointer; }
 #recent .keys { color: var(--muted); font-size: 13px; margin-left: 8px; }
 #release { margin-top: 12px; }
 
-footer { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+.image-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.thumb { flex: none; width: 56px; height: 56px; border-radius: 10px; background: #171a22 center / cover no-repeat; border: 1px dashed var(--line); }
+.thumb.set { border-style: solid; }
+#game-list .cover { flex: none; width: 26px; height: 26px; border-radius: 6px; background: center / cover no-repeat; }
+#game-list .name { flex: 1; }
+#game-list button { align-items: center; }
+#language-row { display: flex; align-items: center; gap: 8px; margin-right: auto; margin-left: 24px; }
+#language-row select { width: auto; font-size: 14px; padding: 6px 10px; }
+
+footer { margin-top: 20px; flex-wrap: wrap; display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
 
 @media (max-width: 1100px) {
   main { grid-template-columns: 290px minmax(0, 1fr); }

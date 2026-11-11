@@ -3,7 +3,7 @@
 Protocol (JSON over WebSocket):
 
     phone -> PC   {"type": "hello", "key": "..."}            must come first
-    PC -> phone   {"type": "welcome", "panels": [...]}
+    PC -> phone   {"type": "welcome", "panels": [...], "language": "ru" | null}
     phone -> PC   {"type": "down", "id": 7, "panel": "x4", "button": "map"}
     phone -> PC   {"type": "up",   "id": 8, "panel": "x4", "button": "map"}
     PC -> phone   {"type": "ack",  "id": 7, "ok": true}
@@ -11,6 +11,10 @@ Protocol (JSON over WebSocket):
     phone -> PC   {"type": "ping", "t": 123.4}
     PC -> phone   {"type": "pong", "t": 123.4}
     PC -> phone   {"type": "panels", "panels": [...]}        panels were edited
+    PC -> phone   {"type": "settings", "language": "ru" | null}
+
+"language" is the interface language chosen on the PC; null means that the
+phone uses the language of its own browser.
 
 The phone names a button, never keys: the key combo is looked up on the PC.
 What "down" does depends on the button's type. A phone that stops talking
@@ -68,6 +72,7 @@ class RemoteHub:
         # Returns None where the foreground window cannot be inspected (not Windows).
         self.foreground = foreground
         self.heartbeat_timeout = heartbeat_timeout
+        self.language: str | None = None
         self.connections: dict[str, Connection] = {}
         self.recent: deque[dict] = deque(maxlen=30)
         self._ids = itertools.count(1)
@@ -85,7 +90,8 @@ class RemoteHub:
                 return
             self.connections[conn.id] = conn
             log.info("%s connected from %s", conn.id, conn.address)
-            await self._send(ws, {"type": "welcome", "panels": self.store.public()})
+            welcome = {"type": "welcome", "panels": self.store.public(), "language": self.language}
+            await self._send(ws, welcome)
             while True:
                 message = await self._receive(ws, self.heartbeat_timeout)
                 await self._dispatch(conn, message)
@@ -133,6 +139,13 @@ class RemoteHub:
         for conn in list(self.connections.values()):
             # A removed or changed button must not stay held.
             self._release_connection(conn)
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await self._send(conn.ws, message)
+
+    async def set_language(self, language: str | None) -> None:
+        self.language = language
+        message = {"type": "settings", "language": language}
+        for conn in list(self.connections.values()):
             with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                 await self._send(conn.ws, message)
 

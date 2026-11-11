@@ -12,6 +12,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 
 const shots = process.argv[2];
 const python = process.env.PYTHON || 'python';
@@ -80,6 +81,30 @@ function writePanel(id, panel) {
   fs.mkdirSync(folder, { recursive: true });
   const text = typeof panel === 'string' ? panel : JSON.stringify(panel, null, 2);
   fs.writeFileSync(path.join(folder, 'panel.json'), text);
+}
+
+// A plain PNG of the given size, to upload as a button picture.
+function png(width, height, [red, green, blue]) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(zlib.crc32(body));
+    return Buffer.concat([head, body, tail]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8); // 8 bits per channel, RGB
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, Buffer.from([red, green, blue]))]);
+  const pixels = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', zlib.deflateSync(pixels)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 const X4 = {
@@ -283,6 +308,51 @@ async function main() {
   ok('the phone uses the new column count', (await page.locator('#grid').evaluate((grid) => getComputedStyle(grid).getPropertyValue('--cols').trim())) === '2');
   await page.locator('.btn', { hasText: 'Карта' }).tap();
   ok('a button made in the editor presses its key', await until(async () => (await status()).recent[0].keys === 'M'));
+
+  // ---- editor: pictures ----------------------------------------------------
+  const pick = async (buttonId, file) => {
+    const [chooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click(buttonId)]);
+    await chooser.setFiles(file);
+  };
+  await desk.locator('#button-list li', { hasText: 'Связь' }).click();
+  await pick('#image-choose', { name: 'photo.png', mimeType: 'image/png', buffer: png(1200, 800, [200, 60, 60]) });
+  ok('the picture is saved into the panel', await until(async () => /^img-[0-9a-f]{12}\.webp$/.test((await stored('game')).buttons[1].image || '')));
+  const picture = (await stored('game')).buttons[1].image;
+  const size = await desk.evaluate(async (url) => {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return [image.naturalWidth, image.naturalHeight];
+  }, `/panel-files/game/${picture}`);
+  ok('a big picture is shrunk before upload', size.join('x') === '512x341', size.join('x'));
+  ok('the preview shows the picture', await until(() => desk.locator('#preview .btn.has-image img').evaluate((img) => img.naturalWidth > 0)));
+  ok('the phone shows the picture', await until(() => page.locator('.btn.has-image img').evaluate((img) => img.naturalWidth > 0)));
+  ok('the label stays readable over the picture', (await page.locator('.btn.has-image .label').textContent()) === 'Связь');
+  await shot(page, 'phone-picture');
+
+  await pick('#cover-choose', { name: 'cover.png', mimeType: 'image/png', buffer: png(300, 300, [40, 120, 220]) });
+  ok('the cover is saved', await until(async () => Boolean((await stored('game')).cover)));
+  await until(() => page.locator('#panel-name.many').count());
+  await page.locator('#panel-name').tap();
+  ok('the phone shows the cover in the list of games', await until(() => page.locator('#panel-items img').evaluate((img) => img.naturalWidth > 0)));
+  await shot(page, 'phone-covers');
+  await page.locator('#panel-items button', { hasText: 'Elite' }).tap();
+
+  await pick('#image-choose', { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not a picture') });
+  ok('a file that is not a picture is refused with a reason', await until(async () => (
+    (await desk.locator('#save-state').textContent()).includes('PNG')
+  )));
+  ok('the old picture stays after a refused file', (await stored('game')).buttons[1].image === picture);
+  await shot(desk, 'pc-editor-picture', { fullPage: true });
+
+  // ---- one language for all devices -----------------------------------------
+  await desk.selectOption('#language', 'en');
+  ok('the editor switches language', await until(async () => (await desk.locator('#games h2').textContent()) === 'Games'));
+  ok('the phone follows the language chosen on the PC', await until(async () => (await page.locator('#status-text').textContent()) === 'Connected'));
+  ok('names typed by the user are not translated', (await page.locator('.btn .label').allTextContents()).join() === 'Карта,Связь');
+  await desk.selectOption('#language', 'auto');
+  ok('"auto" gives the language back to the browser', await until(async () => (await page.locator('#status-text').textContent()) === 'На связи'));
+  await until(async () => (await desk.locator('#games h2').textContent()) === 'Игры');
 
   // A file edited by hand shows up in the open editor.
   const demoFile = path.join(dataDir, 'panels', 'demo', 'panel.json');

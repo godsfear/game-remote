@@ -14,6 +14,7 @@ from game_remote.input.backend import default_backend
 from game_remote.input.controller import DEFAULT_TAP_MS
 from game_remote.input.windows import ForegroundInfo, foreground_info
 from game_remote.panels import PanelStore
+from game_remote.user_settings import UserSettings, load_user_settings
 
 
 @dataclass
@@ -24,6 +25,7 @@ class AppState:
     store: PanelStore
     hub: RemoteHub
     access_key: str
+    user: UserSettings
     # Set by the running program: stops both servers. None while nothing is running.
     stop: Callable[[], None] | None = None
 
@@ -49,4 +51,6 @@ def build_state(
     # With fake input nothing reaches a window, so the focus checks do not apply.
     foreground = (lambda: None) if fake_input else _foreground
     hub = RemoteHub(controller, store, access_key, foreground=foreground)
-    return AppState(settings, backend, controller, store, hub, access_key)
+    user = load_user_settings(settings.user_settings_path)
+    hub.language = user.forced_language
+    return AppState(settings, backend, controller, store, hub, access_key, user)

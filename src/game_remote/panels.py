@@ -10,10 +10,12 @@ The folder is also the exchange format: zip it and you have a panel file.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import time
 from dataclasses import dataclass
@@ -31,6 +33,26 @@ PANEL_FILE = "panel.json"
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,40}$"
 IMAGE_PATTERN = r"^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
 _ID_RE = re.compile(ID_PATTERN)
+_IMAGE_RE = re.compile(IMAGE_PATTERN)
+# Names the editor gives to uploaded images; only these are ever cleaned up.
+_UPLOAD_RE = re.compile(r"^img-[0-9a-f]{12}\.(png|jpg|webp)$")
+MAX_IMAGE_BYTES = 2_000_000
+UNUSED_IMAGE_SECONDS = 600
+
+
+class ImageError(ValueError):
+    """An uploaded file is not an image this program accepts."""
+
+
+def image_extension(data: bytes) -> str | None:
+    """File extension for PNG, JPEG or WebP data, judged by its first bytes."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
 
 
 class Button(BaseModel):
@@ -65,6 +87,8 @@ class Panel(BaseModel):
     # Optional exe name of the game, e.g. "X4.exe". When set, presses are
     # rejected unless that program has focus.
     window: str | None = Field(default=None, max_length=260)
+    # Picture of the game for the list of games; a file in the panel folder.
+    cover: str | None = Field(default=None, pattern=IMAGE_PATTERN)
     buttons: list[Button] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
@@ -96,6 +120,7 @@ class LoadedPanel:
             "id": self.id,
             "name": self.panel.name,
             "columns": self.panel.columns,
+            "cover": f"/panel-files/{self.id}/{self.panel.cover}" if self.panel.cover else None,
             "buttons": [
                 {
                     "id": b.id,
@@ -108,9 +133,15 @@ class LoadedPanel:
             ],
         }
 
-    def image_path(self, name: str) -> Path | None:
-        """Path of a button image, only if a button of this panel uses that file."""
-        if not any(b.image == name for b in self.panel.buttons):
+    def image_path(self, name: str, used_only: bool = True) -> Path | None:
+        """Path of an image of this panel.
+
+        The phone only gets files the panel shows (``used_only``). The editor
+        also needs a picture that was uploaded a moment ago and is not saved
+        into the panel yet.
+        """
+        used = name == self.panel.cover or any(b.image == name for b in self.panel.buttons)
+        if not _IMAGE_RE.match(name) or (used_only and not used):
             return None
         path = self.folder / name
         return path if path.is_file() else None
@@ -207,7 +238,33 @@ class PanelStore:
                 if attempt == 4:
                     raise
                 time.sleep(0.05)
+        self._remove_unused_uploads(folder, panel)
         self.load()
+
+    def add_image(self, panel_id: str, data: bytes) -> str:
+        """Store an uploaded picture in the panel folder; returns its file name."""
+        if not self.exists(panel_id):
+            raise KeyError(panel_id)
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ImageError("too_large")
+        extension = image_extension(data)
+        if extension is None:
+            raise ImageError("not_an_image")
+        name = f"img-{secrets.token_hex(6)}.{extension}"
+        (self.root / panel_id / name).write_bytes(data)
+        return name
+
+    @staticmethod
+    def _remove_unused_uploads(folder: Path, panel: Panel) -> None:
+        """Delete replaced pictures. A fresh upload is kept: the page may not
+        have saved the panel that points to it yet."""
+        used = {button.image for button in panel.buttons} | {panel.cover}
+        for path in folder.glob("img-*"):
+            if not _UPLOAD_RE.match(path.name) or path.name in used:
+                continue
+            with contextlib.suppress(OSError):
+                if time.time() - path.stat().st_mtime > UNUSED_IMAGE_SECONDS:
+                    path.unlink()
 
     def create(self, name: str) -> str:
         """Create an empty panel; returns its id (the folder name)."""
