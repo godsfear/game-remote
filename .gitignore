@@ -32,3 +32,6 @@ Desktop.ini
 # Browser check
 node_modules/
 package-lock.json
+
+# graphify knowledge graph
+graphify-out/
