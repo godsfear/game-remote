@@ -36,6 +36,8 @@ _ID_RE = re.compile(ID_PATTERN)
 _IMAGE_RE = re.compile(IMAGE_PATTERN)
 # Names the editor gives to uploaded images; only these are ever cleaned up.
 _UPLOAD_RE = re.compile(r"^img-[0-9a-f]{12}\.(png|jpg|webp)$")
+# Device names of Windows: a folder cannot be called like one of them.
+_RESERVED_RE = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")
 MAX_IMAGE_BYTES = 2_000_000
 UNUSED_IMAGE_SECONDS = 600
 
@@ -269,6 +271,8 @@ class PanelStore:
     def create(self, name: str) -> str:
         """Create an empty panel; returns its id (the folder name)."""
         base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30].strip("-") or "game"
+        if _RESERVED_RE.match(base):  # Windows cannot make a folder called "con" or "com1"
+            base = f"game-{base}"
         panel_id, number = base, 1
         while (self.root / panel_id).exists():
             number += 1

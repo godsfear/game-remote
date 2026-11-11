@@ -3,48 +3,94 @@
 **Свои кнопки для каждой игры — на телефоне или планшете**  
 **Custom buttons for every game — on your phone or tablet**
 
+[Русский](#русский) · [English](#english)
+
 ## Русский
 
-Game Remote превращает телефон или планшет в пульт для игр на Windows. Кнопки настраиваются в редакторе на ПК и отображаются в браузере мобильного устройства. Например, кнопка «Карта» может отправлять клавишу `M` в активное окно игры.
+Game Remote превращает телефон или планшет в пульт для игр на Windows. На ПК вы собираете панель кнопок для каждой игры, на телефоне открываете её в браузере. Кнопка «Карта» отправляет в игру клавишу `M`, кнопка «Ускорение» держит `Tab`, пока палец на экране.
 
-Проект в разработке: [концепт](CONCEPT.md), [план](PLAN.md). Уже есть прототип, которым можно играть, с редактором игр и кнопок. [Как попробовать](docs/prototype.md). В первую версию входят:
+<p>
+  <img src="docs/img/editor-ru.png" alt="Редактор на ПК" width="68%">
+  <img src="docs/img/phone-ru.png" alt="Пульт на телефоне" width="22%">
+</p>
 
-- На телефон ничего не ставится: пульт открывается в браузере.
-- Кнопки двух типов: «нажать» и «держать», можно нажимать несколько сразу.
-- Отдельная панель для каждой игры с настраиваемыми картинками, подписями и сочетаниями клавиш.
-- Подключение телефона или планшета по QR-коду в локальной сети.
+- **На телефон ничего не ставится.** Пульт открывается в браузере по QR-коду.
+- **Один файл на ПК.** `GameRemote.exe` запускается двойным щелчком, Python не нужен.
+- **Своя панель у каждой игры:** подписи, цвета, картинки, сочетания клавиш, порядок кнопок.
+- **Кнопки «нажать» и «держать»,** можно нажимать несколько сразу.
+- **Привязка к окну игры:** нажатие не попадёт в чат или браузер.
+- **Только ваши устройства:** одноразовый код в QR, свой ключ у каждого телефона, отключение любого из них на ПК.
 - Интерфейс на русском и английском.
-- Автономный `GameRemote.exe` для Windows со встроенным Python.
+
+### Как начать
+
+1. Скачайте `GameRemote.exe` со страницы [Releases](https://github.com/godsfear/game-remote/releases) и запустите его. Файл не подписан, поэтому SmartScreen предупредит: нажмите «Подробнее», затем «Выполнить в любом случае».
+2. На вопрос брандмауэра Windows разрешите доступ в частных сетях.
+3. В браузере откроется страница с QR-кодом. Наведите на него камеру телефона, который подключён к той же Wi-Fi.
+4. Нажмите «Добавить игру» и соберите панель.
+
+Подробности — в [руководстве](docs/guide.md).
+
+### Что нужно знать
+
+- Программа рассчитана на Windows 10 и 11. Пульт проверен на Android в Chrome; на iOS не проверялся.
+- Игры с античитом, который отбрасывает программный ввод, нажатия не видят. Так ведёт себя Undecember. Обходить такую защиту Game Remote не будет.
+- Если игра запущена от администратора, Game Remote тоже нужно запустить от администратора.
+- Связь между телефоном и ПК не шифруется, и пульт отвечает только устройствам домашней сети. Не пользуйтесь программой в чужой или общественной Wi-Fi.
+
+Как устроена программа и почему: [концепт](CONCEPT.md), [план разработки](PLAN.md), [список изменений](CHANGELOG.md).
 
 ## English
 
-Game Remote turns your phone or tablet into a control panel for Windows games. Configure buttons in the PC editor, then use them in your mobile browser. For example, a Map button can send the `M` key to the active game window.
+Game Remote turns a phone or tablet into a button panel for Windows games. You build a panel for each game on the PC and open it in the phone's browser. A Map button sends `M` to the game; a Boost button holds `Tab` while your finger is on the screen.
 
-Work in progress: [concept](CONCEPT.md) and [plan](PLAN.md), both in Russian. A playable prototype with an editor for games and buttons exists. See [how to try it](docs/prototype.md) (in Russian). The first release is planned to include:
+<p>
+  <img src="docs/img/editor-en.png" alt="The editor on the PC" width="68%">
+  <img src="docs/img/phone-en.png" alt="The remote on a phone" width="22%">
+</p>
 
-- Nothing to install on the phone: the panel opens in the browser.
-- Two button types, tap and hold, with multi-touch.
-- A panel per game with custom button images, labels, and keyboard shortcuts.
-- QR code pairing on the local network.
-- English and Russian interfaces.
-- A standalone `GameRemote.exe` for Windows with Python bundled.
+- **Nothing to install on the phone.** The remote opens in the browser from a QR code.
+- **One file on the PC.** `GameRemote.exe` starts with a double click; no Python needed.
+- **A panel per game:** labels, colours, pictures, keyboard shortcuts, button order.
+- **Tap and hold buttons,** several at a time.
+- **Bound to the game's window:** a press never lands in a chat or a browser.
+- **Your devices only:** a one-time code in the QR link, a key per phone, and any of them can be disconnected on the PC.
+- English and Russian interface.
 
-## Stack
+### Getting started
 
-Python · FastAPI · Uvicorn · SQLite · Windows `SendInput` · PyInstaller
+1. Download `GameRemote.exe` from [Releases](https://github.com/godsfear/game-remote/releases) and run it. The file is not signed, so SmartScreen warns: choose "More info", then "Run anyway".
+2. When Windows Firewall asks, allow access on private networks.
+3. A page with a QR code opens in the browser. Point the camera of a phone on the same Wi-Fi at it.
+4. Press "Add a game" and build your panel.
+
+The full [guide](docs/guide.md) is in Russian.
+
+### Good to know
+
+- The program is made for Windows 10 and 11. The remote was checked on Android with Chrome; iOS was not checked.
+- Games whose anti-cheat drops synthetic input do not see the presses. Undecember is one. Game Remote will not work around such protection.
+- If the game runs as administrator, Game Remote must run as administrator too.
+- Traffic between the phone and the PC is not encrypted, and the remote answers only devices of the home network. Do not use the program on someone else's or public Wi-Fi.
+
+Design notes, in Russian: [concept](CONCEPT.md), [plan](PLAN.md). [Changelog](CHANGELOG.md).
 
 ## Development
+
+Python · FastAPI · Uvicorn · SQLite · Windows `SendInput` · PyInstaller
 
 ```
 python -m pip install -e ".[dev]"
 pytest -q
 python -m game_remote          # PC page on http://127.0.0.1:8730, phone panel on port 8731
 python -m game_remote --fake-input --no-tray   # record key presses instead of sending them
-python tools/input_check.py -h # milestone 0: check that key presses reach your games
 python tools/build_exe.py      # dist/GameRemote.exe
 python tools/smoke_test.py dist/GameRemote.exe
-node tests/browser/check.js    # phone panel in a real browser; needs `npm install --no-save playwright`
+node tests/browser/check.js    # both pages in a real browser; needs `npm install --no-save playwright`
+node tools/make_screenshots.js # the pictures in this file
 ```
+
+A release is built by the `Release` workflow: push a tag such as `v0.1.0` or start it by hand on the Actions page. It makes a draft release with `GameRemote.exe`; publish the draft on the Releases page.
 
 ## License
 

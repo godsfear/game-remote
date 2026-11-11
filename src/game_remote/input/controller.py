@@ -10,10 +10,11 @@ stays stuck down.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import Counter
 from collections.abc import Coroutine
 
-from game_remote.input.backend import InputBackend, KeyEvent
+from game_remote.input.backend import InputBackend, InputError, KeyEvent
 from game_remote.input.keys import Combo, scan_code
 
 DEFAULT_TAP_MS = 40
@@ -26,31 +27,51 @@ class InputController:
         self._counts: Counter[str] = Counter()
         # source -> list of combos it currently holds (a combo may repeat).
         self._holds: dict[str, list[Combo]] = {}
+        # Keys whose release Windows refused: they may still be down.
+        self._stuck: set[str] = set()
 
     @property
     def held_keys(self) -> set[str]:
-        return {k for k, n in self._counts.items() if n > 0}
+        return {k for k, n in self._counts.items() if n > 0} | self._stuck
 
     def _press(self, combo: Combo) -> None:
-        events = []
+        fresh = [key for key in combo.keys if self._counts[key] == 0]
+        if fresh:
+            try:
+                self._backend.send([KeyEvent(key, scan_code(key), down=True) for key in fresh])
+            except InputError:
+                # Nothing is counted as held, or every later press of these keys
+                # would be taken for "already down" and never reach Windows.
+                # Windows may have taken a part of the events before it refused,
+                # so the keys of this press are let go as well.
+                ups = [KeyEvent(key, scan_code(key), down=False) for key in reversed(fresh)]
+                with contextlib.suppress(InputError):
+                    self._backend.send(ups)
+                raise
         for key in combo.keys:
-            if self._counts[key] == 0:
-                events.append(KeyEvent(key, scan_code(key), down=True))
             self._counts[key] += 1
-        if events:
-            self._backend.send(events)
+        self._stuck.difference_update(fresh)
 
     def _release(self, combo: Combo) -> None:
-        events = []
+        keys = []
         for key in reversed(combo.keys):
             if self._counts[key] <= 0:
                 continue
             self._counts[key] -= 1
             if self._counts[key] == 0:
                 del self._counts[key]
-                events.append(KeyEvent(key, scan_code(key), down=False))
-        if events:
-            self._backend.send(events)
+                keys.append(key)
+        self._send_up(keys)
+
+    def _send_up(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        try:
+            self._backend.send([KeyEvent(key, scan_code(key), down=False) for key in keys])
+        except InputError:
+            self._stuck.update(keys)
+            raise
+        self._stuck.difference_update(keys)
 
     async def tap(self, combo: Combo, hold_ms: int | None = None) -> None:
         """Press and release, keeping the keys down long enough for a game to notice."""
@@ -89,8 +110,23 @@ class InputController:
         return combo in self._holds.get(source, [])
 
     def release_all(self, source: str | None = None) -> None:
-        """Release what ``source`` holds, or everything when ``source`` is None."""
+        """Release what ``source`` holds, or everything when ``source`` is None.
+
+        One refused release does not stop the rest; the error is raised at the end.
+        Releasing everything also tries again the keys Windows refused to let go.
+        """
         sources = list(self._holds) if source is None else [source]
+        failure: InputError | None = None
         for src in sources:
             for combo in reversed(self._holds.pop(src, [])):
-                self._release(combo)
+                try:
+                    self._release(combo)
+                except InputError as exc:
+                    failure = exc
+        if source is None:
+            try:
+                self._send_up(sorted(self._stuck))
+            except InputError as exc:
+                failure = exc
+        if failure is not None:
+            raise failure
