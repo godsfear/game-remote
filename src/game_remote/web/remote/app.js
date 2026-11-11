@@ -1,5 +1,5 @@
 import { applyTexts, setLanguage, t } from '/shared/i18n.js';
-import { columnsFor, renderGrid } from '/shared/panel-view.js';
+import { layoutGrid, renderGrid, showBackground } from '/shared/panel-view.js';
 
 const KEY_STORE = 'gameRemote.deviceKey';
 const OLD_KEY_STORE = 'gameRemote.key'; // the shared key of the first prototype
@@ -299,6 +299,7 @@ function render() {
   el.name.classList.toggle('many', panels.length > 1);
   document.title = panel ? `${panel.name} · Game Remote` : 'Game Remote';
   el.grid.replaceChildren();
+  showBackground(document.body, panel ? panel.background : null);
   if (!panel) {
     if (key && online) showMessage(t('remote.noPanels'));
     return;
@@ -321,7 +322,7 @@ function isWide() {
 function layout() {
   const panel = currentPanel();
   if (!panel) return;
-  el.grid.style.setProperty('--cols', String(columnsFor(panel, isWide())));
+  layoutGrid(el.grid, panel, isWide());
   el.grid.classList.toggle('wide', isWide());
 }
 

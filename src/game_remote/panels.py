@@ -26,10 +26,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from game_remote.config import system_language
 from game_remote.input.keys import Combo
+from game_remote.web import sample_dir
 
 log = logging.getLogger(__name__)
 
 PANEL_FILE = "panel.json"
+# The ready-made panel a new user starts with; its pictures ship with the program.
+SAMPLE_ID = "star-citizen"
+# Folder of the demo panel that earlier versions created on the first run.
+OLD_DEMO_ID = "demo"
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,40}$"
 IMAGE_PATTERN = r"^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
 _ID_RE = re.compile(ID_PATTERN)
@@ -91,6 +96,11 @@ class Panel(BaseModel):
     window: str | None = Field(default=None, max_length=260)
     # Picture of the game for the list of games; a file in the panel folder.
     cover: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # Picture behind the buttons on the phone; a file in the panel folder.
+    background: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # fill: the buttons share the whole screen. square: they stay square and
+    # sit in the middle, so a background shows around them.
+    shape: Literal["fill", "square"] = "fill"
     buttons: list[Button] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
@@ -112,6 +122,9 @@ class LoadedPanel:
     folder: Path
     panel: Panel
 
+    def _url(self, name: str | None) -> str | None:
+        return f"/panel-files/{self.id}/{name}" if name else None
+
     def full(self) -> dict:
         """Everything, for the editor on the PC."""
         return {"id": self.id, **self.panel.model_dump()}
@@ -122,7 +135,9 @@ class LoadedPanel:
             "id": self.id,
             "name": self.panel.name,
             "columns": self.panel.columns,
-            "cover": f"/panel-files/{self.id}/{self.panel.cover}" if self.panel.cover else None,
+            "shape": self.panel.shape,
+            "cover": self._url(self.panel.cover),
+            "background": self._url(self.panel.background),
             "buttons": [
                 {
                     "id": b.id,
@@ -142,7 +157,9 @@ class LoadedPanel:
         also needs a picture that was uploaded a moment ago and is not saved
         into the panel yet.
         """
-        used = name == self.panel.cover or any(b.image == name for b in self.panel.buttons)
+        used = name in (self.panel.cover, self.panel.background) or any(
+            b.image == name for b in self.panel.buttons
+        )
         if not _IMAGE_RE.match(name) or (used_only and not used):
             return None
         path = self.folder / name
@@ -260,7 +277,7 @@ class PanelStore:
     def _remove_unused_uploads(folder: Path, panel: Panel) -> None:
         """Delete replaced pictures. A fresh upload is kept: the page may not
         have saved the panel that points to it yet."""
-        used = {button.image for button in panel.buttons} | {panel.cover}
+        used = {button.image for button in panel.buttons} | {panel.cover, panel.background}
         for path in folder.glob("img-*"):
             if not _UPLOAD_RE.match(path.name) or path.name in used:
                 continue
@@ -284,6 +301,11 @@ class PanelStore:
         """Move the panel folder to the trash folder."""
         if not self.exists(panel_id):
             return False
+        self._to_trash(panel_id)
+        self.load()
+        return True
+
+    def _to_trash(self, panel_id: str) -> None:
         self.trash.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         target, number = self.trash / f"{panel_id}-{stamp}", 1
@@ -291,22 +313,76 @@ class PanelStore:
             number += 1
             target = self.trash / f"{panel_id}-{stamp}-{number}"
         shutil.move(str(self.root / panel_id), str(target))
-        self.load()
+
+    def install_sample(self) -> bool:
+        """Put the ready-made panel next to the user's own, so the phone has
+        something to show. The caller remembers that it was done: a sample the
+        user deleted does not come back.
+
+        The demo panel of earlier versions gives way to it, unless it was edited.
+        """
+        if self._untouched_old_demo():
+            self._to_trash(OLD_DEMO_ID)
+            log.info("The demo panel of the earlier version was moved to the trash folder")
+        folder = self.root / SAMPLE_ID
+        if folder.exists():
+            return False
+        # Built aside and moved in whole, so a failure leaves no half of a panel.
+        draft = self.root / f".{SAMPLE_ID}.tmp"
+        shutil.rmtree(draft, ignore_errors=True)
+        draft.mkdir(parents=True)
+        for path in sorted(sample_dir(SAMPLE_ID).iterdir()):
+            if _IMAGE_RE.match(path.name):
+                shutil.copyfile(path, draft / path.name)
+        panel = sample_panel(russian=system_language() == "ru")
+        text = json.dumps(panel.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+        (draft / PANEL_FILE).write_text(text + "\n", encoding="utf-8")
+        os.replace(draft, folder)
         return True
 
-    def ensure_demo(self) -> bool:
-        """On the very first run, create a demo panel so the phone has something to show."""
-        if self.root.is_dir() and any(self.root.iterdir()):
+    def _untouched_old_demo(self) -> bool:
+        folder = self.root / OLD_DEMO_ID
+        try:
+            if [path.name for path in folder.iterdir()] != [PANEL_FILE]:
+                return False
+            data = json.loads((folder / PANEL_FILE).read_text(encoding="utf-8-sig"))
+            panel = Panel.model_validate(data)
+        except (OSError, ValueError):
             return False
-        folder = self.root / "demo"
-        folder.mkdir(parents=True, exist_ok=True)
-        panel = demo_panel(russian=system_language() == "ru")
-        text = json.dumps(panel.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
-        (folder / PANEL_FILE).write_text(text + "\n", encoding="utf-8")
-        return True
+        return panel in (demo_panel(russian=True), demo_panel(russian=False))
+
+
+def sample_panel(russian: bool) -> Panel:
+    """Star Citizen with the keys the game has by default. The button pictures
+    and the background lie in ``samples/star-citizen``."""
+    labels = (
+        ("Flight Ready", "ATC", "Шасси", "Фары", "VTOL", "Карта")
+        if russian
+        else ("Flight Ready", "ATC", "Landing gear", "Lights", "VTOL", "Map")
+    )
+    spec = (
+        ("flight-ready", "AltRight+KeyR", "flight-ready.jpg"),
+        ("atc", "AltLeft+KeyN", "atc.jpg"),
+        ("landing-gear", "KeyN", "landing-gear.jpg"),
+        ("headlights", "KeyL", "headlights.jpg"),
+        ("vtol", "KeyK", "vtol.jpg"),
+        ("starmap", "F2", "starmap.jpg"),
+    )
+    return Panel(
+        name="Star Citizen",
+        columns=2,
+        shape="square",
+        background="background.jpg",
+        buttons=[
+            Button(id=bid, label=label, keys=keys, image=image)
+            for label, (bid, keys, image) in zip(labels, spec, strict=True)
+        ],
+    )
 
 
 def demo_panel(russian: bool) -> Panel:
+    """The panel earlier versions created on the first run. Kept to recognise
+    one that nobody edited, and as a plain panel for the tests."""
     labels = (
         ("Карта", "Инвентарь", "Пауза", "Вперёд", "Бег", "Прыжок")
         if russian

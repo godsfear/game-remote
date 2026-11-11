@@ -12,6 +12,27 @@
 }
 .panel-grid.wide { grid-auto-rows: minmax(64px, 1fr); }
 
+/* Square buttons, as large as fits, in the middle of the screen. The grid must
+   have a size of its own for this (cqw, cqh), which every place that shows a
+   panel gives it. */
+.panel-grid.square {
+  container-type: size;
+  grid-template-columns: repeat(var(--cols, 3), auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-content: center;
+}
+.panel-grid.square .btn {
+  width: min(
+    calc((100cqw - (var(--cols, 3) - 1) * var(--gap)) / var(--cols, 3)),
+    calc((100cqh - (var(--rows, 1) - 1) * var(--gap)) / var(--rows, 1))
+  );
+  aspect-ratio: 1;
+}
+
+/* A picture behind the panel. */
+.with-background { background-size: cover; background-position: center; background-repeat: no-repeat; }
+
 .btn {
   position: relative;
   display: flex;

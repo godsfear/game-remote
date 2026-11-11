@@ -18,8 +18,8 @@ from game_remote.input import InputBackend, InputController, RecordingBackend
 from game_remote.input.backend import default_backend
 from game_remote.input.controller import DEFAULT_TAP_MS
 from game_remote.input.windows import ForegroundInfo, OpenWindow, foreground_info, open_windows
-from game_remote.panels import PanelStore
-from game_remote.user_settings import UserSettings, load_user_settings
+from game_remote.panels import SAMPLE_ID, PanelStore
+from game_remote.user_settings import UserSettings, load_user_settings, save_user_settings
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,14 @@ def build_state(
     backend = RecordingBackend() if fake_input else default_backend()
     controller = InputController(backend, tap_ms=tap_ms)
     store = PanelStore(settings.panels_dir, settings.trash_dir)
-    store.ensure_demo()
+    user = load_user_settings(settings.user_settings_path)
+    if SAMPLE_ID not in user.samples:
+        try:
+            store.install_sample()
+            user = user.model_copy(update={"samples": [*user.samples, SAMPLE_ID]})
+            save_user_settings(settings.user_settings_path, user)
+        except OSError:
+            log.exception("Could not install the ready-made panel")
     store.load()
     if remove_legacy_key(settings.data_dir):
         log.info("Removed the shared key of the first prototype; phones pair again by QR code")
@@ -84,7 +91,6 @@ def build_state(
     # With fake input nothing reaches a window, so the focus checks do not apply.
     foreground = (lambda: None) if fake_input else _foreground
     hub = RemoteHub(controller, store, devices, pairing, foreground=foreground)
-    user = load_user_settings(settings.user_settings_path)
     hub.language = user.forced_language
     windows = _sample_windows if fake_input else open_windows
     return AppState(settings, backend, controller, store, hub, devices, pairing, user, windows)

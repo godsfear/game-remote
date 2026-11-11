@@ -101,6 +101,35 @@ def test_picture_and_cover_reach_the_phone(client, state):
     assert on_disk["cover"] == cover
 
 
+def test_background_reaches_the_phone_and_is_kept_as_a_used_picture(client, state):
+    folder = state.settings.panels_dir / "demo"
+    background = upload(client, WEBP).json()["name"]
+    long_ago = time.time() - 3600
+    os.utime(folder / background, (long_ago, long_ago))
+    phone = TestClient(create_remote_app(state), client=PHONE)
+    assert phone.get(f"/panel-files/demo/{background}").status_code == 404
+
+    panel = demo(client)
+    panel.pop("id")
+    panel |= {"background": background, "shape": "square"}
+    assert client.put("/api/panels/demo", json=panel, headers=ORIGIN).status_code == 200
+    saved = demo(client)
+    assert (saved["background"], saved["shape"]) == (background, "square")
+
+    public = state.store.public()[0]
+    assert public["shape"] == "square"
+    assert public["background"] == f"/panel-files/demo/{background}"
+    assert phone.get(public["background"]).content == WEBP
+    # Old, but in use: the next save does not take it for a leftover.
+    client.put("/api/panels/demo", json=panel, headers=ORIGIN)
+    assert (folder / background).exists()
+
+    panel["background"] = None
+    client.put("/api/panels/demo", json=panel, headers=ORIGIN)
+    assert state.store.public()[0]["background"] is None
+    assert phone.get(f"/panel-files/demo/{background}").status_code == 404
+
+
 def test_replaced_pictures_are_removed_later_and_own_files_never(client, state):
     folder = state.settings.panels_dir / "demo"
     old, fresh = upload(client, PNG).json()["name"], upload(client, PNG).json()["name"]
@@ -153,6 +182,15 @@ def test_language_choice_is_saved_and_sent_to_phones(client, state):
     with phone.websocket_connect("/ws") as ws:
         ws.send_json({"type": "hello", "key": phone_key(state)})
         assert ws.receive_json()["language"] == "ru"
+
+
+def test_language_choice_keeps_the_other_settings(client, state):
+    before = load_user_settings(state.settings.user_settings_path)
+    assert before.samples  # the ready-made panel is marked as installed
+    client.put("/api/settings", json={"language": "en"}, headers=ORIGIN)
+    after = load_user_settings(state.settings.user_settings_path)
+    assert (after.language, after.samples) == ("en", before.samples)
+    assert state.user == after
 
 
 def test_bad_language_is_refused(client):

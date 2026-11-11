@@ -47,6 +47,7 @@ def main() -> None:
         f"--workpath={WORK}",
         f"--specpath={WORK}",
         f"--add-data={ROOT / 'src' / 'game_remote' / 'web'}:game_remote/web",
+        f"--add-data={ROOT / 'src' / 'game_remote' / 'samples'}:game_remote/samples",
         # Uvicorn picks its event loop, HTTP and WebSocket code by name at run time.
         "--collect-submodules=uvicorn",
         "--collect-submodules=websockets",

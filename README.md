@@ -7,7 +7,7 @@
 
 ## Русский
 
-Game Remote превращает телефон или планшет в пульт для игр на Windows. На ПК вы собираете панель кнопок для каждой игры, на телефоне открываете её в браузере. Кнопка «Карта» отправляет в игру клавишу `M`, кнопка «Ускорение» держит `Tab`, пока палец на экране.
+Game Remote превращает телефон или планшет в пульт для игр на Windows. На ПК вы собираете панель кнопок для каждой игры, на телефоне открываете её в браузере. Кнопка «Фары» отправляет в игру клавишу `L`, а кнопка типа «держать» зажимает клавишу, пока палец на экране.
 
 <p>
   <img src="docs/img/editor-ru.png" alt="Редактор на ПК" width="68%">
@@ -16,7 +16,7 @@ Game Remote превращает телефон или планшет в пул�
 
 - **На телефон ничего не ставится.** Пульт открывается в браузере по QR-коду.
 - **Один файл на ПК.** `GameRemote.exe` запускается двойным щелчком, Python не нужен.
-- **Своя панель у каждой игры:** подписи, цвета, картинки, сочетания клавиш, порядок кнопок.
+- **Своя панель у каждой игры:** подписи, цвета, картинки, фон, сочетания клавиш, порядок кнопок.
 - **Кнопки «нажать» и «держать»,** можно нажимать несколько сразу.
 - **Привязка к окну игры:** нажатие не попадёт в чат или браузер.
 - **Только ваши устройства:** одноразовый код в QR, свой ключ у каждого телефона, отключение любого из них на ПК.
@@ -27,7 +27,7 @@ Game Remote превращает телефон или планшет в пул�
 1. Скачайте `GameRemote.exe` со страницы [Releases](https://github.com/godsfear/game-remote/releases) и запустите его. Файл не подписан, поэтому SmartScreen предупредит: нажмите «Подробнее», затем «Выполнить в любом случае».
 2. На вопрос брандмауэра Windows разрешите доступ в частных сетях.
 3. В браузере откроется страница с QR-кодом. Наведите на него камеру телефона, который подключён к той же Wi-Fi.
-4. Нажмите «Добавить игру» и соберите панель.
+4. На телефоне откроется готовая панель Star Citizen. Чтобы собрать свою, нажмите «Добавить игру».
 
 Подробности — в [руководстве](docs/guide.md).
 
@@ -42,7 +42,7 @@ Game Remote превращает телефон или планшет в пул�
 
 ## English
 
-Game Remote turns a phone or tablet into a button panel for Windows games. You build a panel for each game on the PC and open it in the phone's browser. A Map button sends `M` to the game; a Boost button holds `Tab` while your finger is on the screen.
+Game Remote turns a phone or tablet into a button panel for Windows games. You build a panel for each game on the PC and open it in the phone's browser. A Lights button sends `L` to the game; a hold button keeps its key down while your finger is on the screen.
 
 <p>
   <img src="docs/img/editor-en.png" alt="The editor on the PC" width="68%">
@@ -51,7 +51,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 
 - **Nothing to install on the phone.** The remote opens in the browser from a QR code.
 - **One file on the PC.** `GameRemote.exe` starts with a double click; no Python needed.
-- **A panel per game:** labels, colours, pictures, keyboard shortcuts, button order.
+- **A panel per game:** labels, colours, pictures, a background, keyboard shortcuts, button order.
 - **Tap and hold buttons,** several at a time.
 - **Bound to the game's window:** a press never lands in a chat or a browser.
 - **Your devices only:** a one-time code in the QR link, a key per phone, and any of them can be disconnected on the PC.
@@ -62,7 +62,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 1. Download `GameRemote.exe` from [Releases](https://github.com/godsfear/game-remote/releases) and run it. The file is not signed, so SmartScreen warns: choose "More info", then "Run anyway".
 2. When Windows Firewall asks, allow access on private networks.
 3. A page with a QR code opens in the browser. Point the camera of a phone on the same Wi-Fi at it.
-4. Press "Add a game" and build your panel.
+4. The phone shows a ready-made Star Citizen panel. To build your own, press "Add a game".
 
 The full [guide](docs/guide.md) is in Russian.
 

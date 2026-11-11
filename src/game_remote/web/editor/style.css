@@ -112,6 +112,7 @@ summary { cursor: pointer; }
 #phone-head .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 #preview { flex: 1; min-height: 0; }
 #preview.panel-grid { --gap: 6px; grid-auto-rows: minmax(34px, 1fr); padding: 6px; }
+#preview.panel-grid.square { grid-auto-rows: auto; }
 #preview .btn { border-radius: 10px; font-size: clamp(9px, 4.2cqw, 14px); padding: 4px; cursor: pointer; }
 #preview .btn.hold::before { top: 5px; right: 5px; width: 6px; height: 6px; border-width: 1.5px; }
 #preview .btn.draft { opacity: 0.45; outline: 1px dashed rgba(255, 255, 255, 0.6); outline-offset: -3px; }
