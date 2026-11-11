@@ -4,6 +4,8 @@ import { columnsFor, renderGrid } from '/shared/panel-view.js';
 const KEY_STORE = 'gameRemote.deviceKey';
 const OLD_KEY_STORE = 'gameRemote.key'; // the shared key of the first prototype
 const PANEL_STORE = 'gameRemote.panel';
+const VIBRATE_STORE = 'gameRemote.vibrate';
+const NOTICE_AFTER_MS = 4000; // a short hiccup needs no explanation
 const PING_EVERY_MS = 1000;
 const PONG_TIMEOUT_MS = 3000;
 const CLOSE_BAD_KEY = 4401;
@@ -18,6 +20,12 @@ const el = {
   list: document.getElementById('panel-list'),
   items: document.getElementById('panel-items'),
   toast: document.getElementById('toast'),
+  notice: document.getElementById('notice'),
+  menu: document.getElementById('menu'),
+  menuOpen: document.getElementById('menu-open'),
+  menuClose: document.getElementById('menu-close'),
+  fullscreen: document.getElementById('menu-fullscreen'),
+  vibration: document.getElementById('menu-vibration'),
 };
 
 const store = {
@@ -38,6 +46,9 @@ let panelId = store.get(PANEL_STORE);
 let nextId = 1;
 let lastPong = 0;
 let retryMs = 500;
+let retryTimer = 0;
+let offlineSince = 0; // when the connection was lost; 0 while it is fine
+let vibration = store.get(VIBRATE_STORE) !== 'off';
 let toastTimer = 0;
 // button id -> { pointerId, node } for every button a finger is on right now
 const pressed = new Map();
@@ -68,9 +79,22 @@ let statusState = 'offline';
 function setStatus(state) {
   statusState = state;
   online = state === 'online';
+  if (online) offlineSince = 0;
+  else if (!offlineSince) offlineSince = performance.now();
+  showNotice();
   el.status.className = state;
   el.statusText.textContent = t(`remote.${state}`);
   document.body.classList.toggle('offline', !online);
+}
+
+// Explains a lost connection once it lasts; before that the dot says enough.
+function showNotice() {
+  const lost = Boolean(key) && offlineSince > 0 && performance.now() - offlineSince > NOTICE_AFTER_MS;
+  el.notice.hidden = !lost;
+}
+
+function buzz(pattern) {
+  if (vibration && navigator.vibrate) navigator.vibrate(pattern);
 }
 
 function showMessage(text) {
@@ -97,6 +121,8 @@ function send(message) {
 // ---- connection ------------------------------------------------------------
 
 function connect() {
+  clearTimeout(retryTimer);
+  if (ws) return;
   if (!key && !pairCode) {
     setStatus('offline');
     showMessage(t('remote.scan'));
@@ -135,9 +161,23 @@ function connect() {
       return;
     }
     setStatus('offline');
-    setTimeout(connect, retryMs);
+    retryTimer = setTimeout(connect, retryMs);
     retryMs = Math.min(retryMs * 2, 3000);
   };
+}
+
+// Gives up on a silent connection and starts a new one right away, without
+// waiting for the old one to close: on a dead network that takes long.
+function reconnect() {
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try { old.close(); } catch { /* already gone */ }
+  }
+  dropAllPresses();
+  setStatus('offline');
+  retryMs = 500;
+  connect();
 }
 
 // The PC can set one language for every device; null leaves it to the browser.
@@ -179,14 +219,16 @@ function onMessage(message) {
         node.classList.add('rejected');
       }
       showToast(t(`reason.${message.reason}`));
+      buzz([30, 60, 30]);
     }
   }
 }
 
 setInterval(() => {
+  showNotice();
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (performance.now() - lastPong > PONG_TIMEOUT_MS) {
-    ws.close(); // the PC is silent: reconnect; it releases our keys by itself
+    reconnect(); // the PC is silent; it releases our keys by itself
     return;
   }
   send({ type: 'ping', t: performance.now() });
@@ -202,7 +244,7 @@ function press(button, node, pointerId) {
   waiting.set(id, node);
   if (waiting.size > 50) waiting.delete(waiting.keys().next().value);
   send({ type: 'down', id, panel: currentPanel().id, button: button.id });
-  if (navigator.vibrate) navigator.vibrate(12);
+  buzz(12);
 }
 
 function release(button, pointerId) {
@@ -310,6 +352,42 @@ function openList() {
 el.name.addEventListener('click', openList);
 el.list.addEventListener('click', (event) => { if (event.target === el.list) el.list.hidden = true; });
 
+// ---- settings of this device ----------------------------------------------
+
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+
+function renderMenu() {
+  const root = document.documentElement;
+  el.fullscreen.parentElement.hidden = !(root.requestFullscreen || root.webkitRequestFullscreen);
+  el.fullscreen.setAttribute('aria-pressed', String(Boolean(fullscreenElement())));
+  el.vibration.parentElement.hidden = !navigator.vibrate;
+  el.vibration.setAttribute('aria-pressed', String(vibration));
+}
+
+async function toggleFullscreen() {
+  const root = document.documentElement;
+  try {
+    if (fullscreenElement()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else await (root.requestFullscreen || root.webkitRequestFullscreen).call(root, { navigationUI: 'hide' });
+  } catch { /* the browser said no; the switch shows the real state */ }
+  renderMenu();
+}
+
+el.menuOpen.addEventListener('click', () => {
+  releaseAll();
+  renderMenu();
+  el.menu.hidden = false;
+});
+el.menuClose.addEventListener('click', () => { el.menu.hidden = true; });
+el.fullscreen.addEventListener('click', toggleFullscreen);
+el.vibration.addEventListener('click', () => {
+  vibration = !vibration;
+  store.set(VIBRATE_STORE, vibration ? 'on' : 'off');
+  renderMenu();
+  buzz(12);
+});
+for (const type of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(type, renderMenu);
+
 // ---- keep the screen on ----------------------------------------------------
 
 // The Wake Lock API only exists on secure pages, and this page is plain HTTP.
@@ -338,6 +416,13 @@ document.addEventListener('visibilitychange', keepAwake);
 window.addEventListener('resize', layout);
 document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+// Back from a locked screen or a lost Wi-Fi: do not wait for the next retry.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  const silent = ws && performance.now() - lastPong > PONG_TIMEOUT_MS;
+  if (silent || (!ws && statusState === 'offline' && (key || pairCode))) reconnect();
+});
+window.addEventListener('online', () => { if (!ws && (key || pairCode)) reconnect(); });
 window.addEventListener('pagehide', releaseAll);
 window.addEventListener('blur', releaseAll);
 

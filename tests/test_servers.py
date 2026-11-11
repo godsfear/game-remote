@@ -116,6 +116,18 @@ def test_remote_health_and_page(state):
     assert client.get("/app.js").status_code == 200
 
 
+def test_remote_page_can_be_put_on_the_home_screen(state):
+    client = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
+    manifest = client.get("/manifest.json").json()
+    assert manifest["display"] == "fullscreen" and manifest["start_url"] == "/"
+    for icon in manifest["icons"]:
+        reply = client.get("/" + icon["src"])
+        assert reply.headers["content-type"] == "image/png"
+        assert reply.content.startswith(b"\x89PNG")
+    assert "<svg" in client.get("/shared/icon.svg").text
+    assert 'rel="manifest"' in client.get("/").text
+
+
 def test_remote_app_has_no_editor_routes(state):
     client = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
     for path in ("/api/status", "/api/links", "/api/qr/0.svg"):
