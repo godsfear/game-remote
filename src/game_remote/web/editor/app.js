@@ -1,35 +1,506 @@
 import { applyTexts, t } from '/shared/i18n.js';
+import { renderGrid } from '/shared/panel-view.js';
 
-const el = Object.fromEntries(
-  ['qr', 'no-address', 'address', 'address-row', 'phones', 'panels', 'folder', 'open-folder',
-    'recent', 'release', 'fake', 'offline', 'version', 'quit'].map((id) => [id, document.getElementById(id)]),
-);
+const SAVE_DELAY_MS = 400;
+const PANEL_STORE = 'gameRemote.editor.panel';
+const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
-async function api(path, options) {
-  const response = await fetch(path, options);
-  if (!response.ok) throw new Error(`${path}: ${response.status}`);
-  return response.json();
+const el = Object.fromEntries([
+  'save-state', 'fake', 'offline', 'game-list', 'panel-errors', 'add-game', 'connect', 'phones',
+  'show-qr', 'connect-body', 'qr', 'no-address', 'address', 'address-row', 'no-game', 'game-card',
+  'game-name', 'columns', 'columns-less', 'columns-more', 'delete-game', 'buttons-card',
+  'button-list', 'add-button', 'button-card', 'button-label', 'combo', 'record', 'combo-error',
+  'manual', 'manual-key', 'button-type', 'type-hint', 'colors', 'duplicate-button',
+  'delete-button', 'preview-card', 'rotate', 'phone', 'phone-name', 'preview', 'preview-empty',
+  'recent', 'release', 'version', 'open-folder', 'quit',
+].map((id) => [id, document.getElementById(id)]));
+
+const store = {
+  get(name) { try { return localStorage.getItem(name); } catch { return null; } },
+  set(name, value) { try { localStorage.setItem(name, value); } catch { /* private mode */ } },
+};
+
+// ---- state -----------------------------------------------------------------
+
+let panels = []; // as the PC stores them, plus buttons that have no keys yet
+let panelErrors = {};
+let revision = 0; // the last state of the panel files this page knows
+let currentId = store.get(PANEL_STORE);
+let selectedId = null; // the button being edited
+let keyLabels = new Map(); // key code -> short label
+let modifiers = [];
+let wide = false;
+let showQrAnyway = false;
+let phones = 0;
+let capture = null; // { down: Set, all: [] } while a combo is being recorded
+let saveTimer = 0;
+let saving = false;
+const dirty = new Set(); // ids of panels with changes not yet on the PC
+
+const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
+const selectedButton = () => currentPanel()?.buttons.find((b) => b.id === selectedId) || null;
+
+async function api(path, options = {}) {
+  const init = { ...options };
+  if (init.body !== undefined) {
+    init.body = JSON.stringify(init.body);
+    init.headers = { 'Content-Type': 'application/json' };
+  }
+  const response = await fetch(path, init);
+  let data = null;
+  try { data = await response.json(); } catch { /* no body */ }
+  if (!response.ok) throw new Error(data?.error || `${path}: ${response.status}`);
+  return data;
 }
 
-function item(className, ...children) {
-  const li = document.createElement('li');
-  if (className) li.className = className;
-  li.append(...children);
-  return li;
+function comboLabel(keys) {
+  if (!keys) return '';
+  return keys.split('+').map((code) => keyLabels.get(code) || code).join('+');
 }
 
-function span(className, text) {
-  const node = document.createElement('span');
-  if (className) node.className = className;
-  node.textContent = text;
-  return node;
+function newButtonId(panel) {
+  for (;;) {
+    const id = `b${Math.random().toString(36).slice(2, 8)}`;
+    if (!panel.buttons.some((button) => button.id === id)) return id;
+  }
 }
 
-function empty(key) {
-  const li = item('empty');
-  li.textContent = t(key);
-  return li;
+// ---- small DOM helpers -----------------------------------------------------
+
+function node(tag, className, text) {
+  const result = document.createElement(tag);
+  if (className) result.className = className;
+  if (text !== undefined) result.textContent = text;
+  return result;
 }
+
+function setSaveState(state, detail = '') {
+  el['save-state'].className = state === 'error' ? 'error' : 'hint';
+  el['save-state'].textContent = state ? t(`editor.save.${state}`) + (detail ? ` ${detail}` : '') : '';
+}
+
+// ---- loading and saving ----------------------------------------------------
+
+function takePanels(data) {
+  panels = data.panels;
+  panelErrors = data.errors;
+  revision = data.revision;
+  if (!currentPanel()) currentId = panels[0]?.id || null;
+  if (!selectedButton()) selectedId = null;
+  renderAll();
+}
+
+async function loadPanels() {
+  takePanels(await api('/api/panels'));
+}
+
+function changed() {
+  const panel = currentPanel();
+  if (!panel) return;
+  dirty.add(panel.id);
+  setSaveState('pending');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, SAVE_DELAY_MS);
+}
+
+// What goes into the file: a button without keys is not a button yet.
+function forFile(panel) {
+  return {
+    format: 1,
+    name: panel.name.trim(),
+    columns: panel.columns,
+    window: panel.window || null,
+    buttons: panel.buttons.filter((button) => button.keys).map((button) => ({
+      id: button.id,
+      label: button.label,
+      keys: button.keys,
+      type: button.type,
+      color: button.color || null,
+      image: button.image || null,
+    })),
+  };
+}
+
+async function save() {
+  clearTimeout(saveTimer);
+  if (saving) return; // the running save starts another one when it ends
+  saving = true;
+  try {
+    while (dirty.size) {
+      const id = dirty.values().next().value;
+      dirty.delete(id);
+      const panel = panels.find((candidate) => candidate.id === id);
+      if (!panel) continue;
+      if (!panel.name.trim()) {
+        setSaveState('error', t('editor.needName'));
+        return;
+      }
+      const result = await api(`/api/panels/${id}`, { method: 'PUT', body: forFile(panel) });
+      revision = result.revision;
+    }
+    setSaveState('saved');
+  } catch (error) {
+    setSaveState('error', error.message);
+  } finally {
+    saving = false;
+  }
+}
+
+// ---- games -----------------------------------------------------------------
+
+function renderGames() {
+  el['game-list'].replaceChildren(...panels.map((panel) => {
+    const button = node('button');
+    button.type = 'button';
+    button.dataset.panel = panel.id;
+    button.setAttribute('aria-current', String(panel.id === currentId));
+    button.append(
+      node('span', 'name', panel.name || t('editor.unnamed')),
+      node('span', 'count', String(panel.buttons.length)),
+    );
+    button.addEventListener('click', () => selectPanel(panel.id));
+    const li = node('li');
+    li.append(button);
+    return li;
+  }));
+  el['panel-errors'].replaceChildren(...Object.entries(panelErrors).map(([id, error]) => {
+    const li = node('li');
+    li.append(node('span', '', `${id} — ${t('editor.panelError')}`), node('small', '', error));
+    return li;
+  }));
+}
+
+function selectPanel(id) {
+  if (id === currentId) return;
+  stopCapture();
+  currentId = id;
+  selectedId = null;
+  store.set(PANEL_STORE, id || '');
+  renderAll();
+}
+
+async function addGame() {
+  await save();
+  const data = await api('/api/panels', { method: 'POST', body: { name: t('editor.newGame') } });
+  currentId = data.id;
+  selectedId = null;
+  store.set(PANEL_STORE, currentId);
+  takePanels(data);
+  el['game-name'].focus();
+  el['game-name'].select();
+}
+
+async function deleteGame() {
+  const panel = currentPanel();
+  if (!panel || !window.confirm(t('editor.confirmDeleteGame', { name: panel.name }))) return;
+  clearTimeout(saveTimer);
+  dirty.delete(panel.id);
+  await api(`/api/panels/${panel.id}`, { method: 'DELETE' });
+  currentId = null;
+  await loadPanels();
+  setSaveState('saved');
+}
+
+function fillGameForm() {
+  const panel = currentPanel();
+  for (const id of ['game-card', 'buttons-card', 'preview-card']) el[id].hidden = !panel;
+  el['no-game'].hidden = Boolean(panel);
+  if (!panel) return;
+  if (document.activeElement !== el['game-name']) el['game-name'].value = panel.name;
+  el.columns.textContent = String(panel.columns);
+  el['columns-less'].disabled = panel.columns <= 1;
+  el['columns-more'].disabled = panel.columns >= 8;
+}
+
+function changeColumns(step) {
+  const panel = currentPanel();
+  panel.columns = Math.min(8, Math.max(1, panel.columns + step));
+  fillGameForm();
+  renderPreview();
+  changed();
+}
+
+// ---- list of buttons -------------------------------------------------------
+
+let dragged = null;
+
+function renderButtons() {
+  const panel = currentPanel();
+  if (!panel) return;
+  el['button-list'].replaceChildren(...panel.buttons.map((button, index) => {
+    const li = node('li');
+    li.dataset.button = button.id;
+    li.draggable = true;
+    li.setAttribute('aria-current', String(button.id === selectedId));
+    const swatch = node('span', 'swatch');
+    if (button.color) swatch.style.setProperty('--color', button.color);
+    const name = node('span', button.label ? 'name' : 'name unnamed', button.label || t('editor.noLabel'));
+    const keys = node('span', button.keys ? 'keys' : 'keys missing', button.keys ? comboLabel(button.keys) : t('editor.noKeys'));
+    const kind = node('span', 'kind', t(button.type === 'hold' ? 'editor.typeHold' : 'editor.typeTap'));
+    const move = node('span', 'move');
+    for (const [step, sign, key] of [[-1, '↑', 'editor.moveUp'], [1, '↓', 'editor.moveDown']]) {
+      const arrow = node('button', '', sign);
+      arrow.type = 'button';
+      arrow.title = t(key);
+      arrow.setAttribute('aria-label', t(key));
+      arrow.disabled = index + step < 0 || index + step >= panel.buttons.length;
+      arrow.addEventListener('click', (event) => {
+        event.stopPropagation();
+        moveButton(index, index + step);
+      });
+      move.append(arrow);
+    }
+    li.append(swatch, name, keys, kind, move);
+    li.addEventListener('click', () => selectButton(button.id));
+    li.addEventListener('dragstart', (event) => {
+      dragged = index;
+      li.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', button.id);
+    });
+    li.addEventListener('dragend', () => {
+      dragged = null;
+      for (const item of el['button-list'].children) item.classList.remove('dragging', 'drop-target');
+    });
+    li.addEventListener('dragover', (event) => {
+      if (dragged === null) return;
+      event.preventDefault();
+      li.classList.add('drop-target');
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drop-target'));
+    li.addEventListener('drop', (event) => {
+      event.preventDefault();
+      if (dragged !== null) moveButton(dragged, index);
+    });
+    return li;
+  }));
+}
+
+function moveButton(from, to) {
+  const panel = currentPanel();
+  if (from === to || to < 0 || to >= panel.buttons.length) return;
+  const [button] = panel.buttons.splice(from, 1);
+  panel.buttons.splice(to, 0, button);
+  renderButtons();
+  renderPreview();
+  changed();
+}
+
+function selectButton(id) {
+  if (id !== selectedId) stopCapture();
+  selectedId = id;
+  renderButtons();
+  fillButtonForm();
+  renderPreview();
+}
+
+function addButton() {
+  const panel = currentPanel();
+  const button = { id: newButtonId(panel), label: '', keys: '', type: 'tap', color: null, image: null };
+  panel.buttons.push(button);
+  selectButton(button.id);
+  renderGames();
+  el['button-label'].focus();
+  // Nothing to save yet: the button gets into the file once it has keys.
+}
+
+function duplicateButton() {
+  const panel = currentPanel();
+  const button = selectedButton();
+  const copy = { ...button, id: newButtonId(panel) };
+  panel.buttons.splice(panel.buttons.indexOf(button) + 1, 0, copy);
+  selectButton(copy.id);
+  renderGames();
+  changed();
+}
+
+function deleteButton() {
+  const panel = currentPanel();
+  const index = panel.buttons.indexOf(selectedButton());
+  if (index < 0) return;
+  stopCapture();
+  panel.buttons.splice(index, 1);
+  selectedId = null;
+  renderAll();
+  changed();
+}
+
+// ---- one button ------------------------------------------------------------
+
+function fillButtonForm() {
+  const button = selectedButton();
+  el['button-card'].hidden = !button;
+  if (!button) return;
+  if (document.activeElement !== el['button-label']) el['button-label'].value = button.label;
+  showCombo();
+  for (const choice of el['button-type'].children) {
+    choice.setAttribute('aria-pressed', String(choice.dataset.type === button.type));
+  }
+  el['type-hint'].textContent = t(button.type === 'hold' ? 'editor.typeHoldHint' : 'editor.typeTapHint');
+  for (const swatch of el.colors.querySelectorAll('button')) {
+    swatch.setAttribute('aria-pressed', String((swatch.dataset.color || null) === (button.color || null)));
+  }
+  el.colors.querySelector('input').value = button.color || '#2b3040';
+  fillManual(button);
+}
+
+function showCombo() {
+  const button = selectedButton();
+  if (!button) return;
+  el.combo.classList.toggle('recording', Boolean(capture));
+  el.record.textContent = t(capture ? 'editor.cancel' : 'editor.record');
+  if (capture) {
+    el.combo.classList.remove('missing');
+    el.combo.textContent = capture.all.length ? comboLabel(capture.all.join('+')) : t('editor.pressKeys');
+    return;
+  }
+  el.combo.classList.toggle('missing', !button.keys);
+  el.combo.textContent = button.keys ? comboLabel(button.keys) : t('editor.noKeys');
+}
+
+function setKeys(codes) {
+  const button = selectedButton();
+  const unknown = codes.find((code) => !keyLabels.has(code));
+  if (unknown) {
+    el['combo-error'].textContent = t('editor.unknownKey', { key: unknown });
+    el['combo-error'].hidden = false;
+    return;
+  }
+  el['combo-error'].hidden = true;
+  // Modifiers first, in a fixed order, like the PC stores them.
+  const ordered = [
+    ...modifiers.filter((code) => codes.includes(code)),
+    ...codes.filter((code) => !modifiers.includes(code)),
+  ];
+  const wasNew = !button.keys;
+  button.keys = ordered.join('+');
+  fillButtonForm();
+  renderButtons();
+  renderPreview();
+  if (wasNew) renderGames();
+  changed();
+}
+
+// Recording: every key pressed until all of them are released again.
+function startCapture() {
+  capture = { down: new Set(), all: [] };
+  el['combo-error'].hidden = true;
+  el.record.blur();
+  showCombo();
+}
+
+function stopCapture() {
+  if (!capture) return;
+  capture = null;
+  showCombo();
+}
+
+window.addEventListener('keydown', (event) => {
+  if (!capture) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.repeat || !event.code) return;
+  capture.down.add(event.code);
+  if (!capture.all.includes(event.code)) capture.all.push(event.code);
+  showCombo();
+}, true);
+
+window.addEventListener('keyup', (event) => {
+  if (!capture) return;
+  event.preventDefault();
+  event.stopPropagation();
+  // A release of a key that went down before the recording began is not part of it.
+  capture.down.delete(event.code);
+  if (capture.down.size === 0 && capture.all.length) {
+    const codes = capture.all;
+    capture = null;
+    setKeys(codes);
+    showCombo();
+  }
+}, true);
+
+window.addEventListener('blur', stopCapture);
+
+function fillManual(button) {
+  const codes = button.keys ? button.keys.split('+') : [];
+  for (const box of el.manual.querySelectorAll('input[data-mod]')) {
+    const right = box.dataset.mod.replace('Left', 'Right');
+    box.checked = codes.includes(box.dataset.mod) || codes.includes(right);
+  }
+  el['manual-key'].value = codes.find((code) => !modifiers.includes(code)) || '';
+}
+
+function manualChanged() {
+  const codes = [...el.manual.querySelectorAll('input[data-mod]:checked')].map((box) => box.dataset.mod);
+  if (el['manual-key'].value) codes.push(el['manual-key'].value);
+  if (codes.length) setKeys(codes);
+}
+
+function setColor(color) {
+  selectedButton().color = color;
+  fillButtonForm();
+  renderButtons();
+  renderPreview();
+  changed();
+}
+
+function buildColors() {
+  const none = node('button');
+  none.type = 'button';
+  none.title = t('editor.noColor');
+  none.setAttribute('aria-label', t('editor.noColor'));
+  none.addEventListener('click', () => setColor(null));
+  const swatches = COLORS.map((color) => {
+    const swatch = node('button');
+    swatch.type = 'button';
+    swatch.dataset.color = color;
+    swatch.style.setProperty('--color', color);
+    swatch.setAttribute('aria-label', color);
+    swatch.addEventListener('click', () => setColor(color));
+    return swatch;
+  });
+  const custom = document.createElement('input');
+  custom.type = 'color';
+  custom.title = t('editor.customColor');
+  custom.setAttribute('aria-label', t('editor.customColor'));
+  custom.addEventListener('input', () => setColor(custom.value));
+  el.colors.replaceChildren(none, ...swatches, custom);
+}
+
+// ---- preview ---------------------------------------------------------------
+
+function renderPreview() {
+  const panel = currentPanel();
+  if (!panel) return;
+  el['phone-name'].textContent = panel.name || 'Game Remote';
+  el.phone.classList.toggle('wide', wide);
+  const shown = {
+    columns: panel.columns,
+    buttons: panel.buttons.map((button) => ({
+      ...button,
+      image: button.image ? `/panel-files/${panel.id}/${encodeURIComponent(button.image)}` : null,
+    })),
+  };
+  el['preview-empty'].hidden = shown.buttons.length > 0;
+  el.preview.hidden = shown.buttons.length === 0;
+  const nodes = renderGrid(el.preview, shown, { wide });
+  nodes.forEach((buttonNode, index) => {
+    const button = panel.buttons[index];
+    buttonNode.classList.toggle('selected', button.id === selectedId);
+    buttonNode.classList.toggle('draft', !button.keys); // not on the phone yet
+    buttonNode.addEventListener('click', () => selectButton(button.id));
+  });
+}
+
+function renderAll() {
+  renderGames();
+  fillGameForm();
+  renderButtons();
+  fillButtonForm();
+  renderPreview();
+}
+
+// ---- phone connection, status ----------------------------------------------
 
 function showQr() {
   el.qr.src = `/api/qr/${el.address.value}.svg`;
@@ -40,10 +511,8 @@ async function loadLinks() {
   const { links } = await api('/api/links');
   const chosen = el.address.value;
   el.address.replaceChildren(...links.map((link, index) => {
-    const option = document.createElement('option');
+    const option = node('option', '', `${link.host} — ${t(link.kind === 'name' ? 'editor.addressName' : 'editor.addressIp')}`);
     option.value = String(index);
-    const kind = t(link.kind === 'name' ? 'editor.addressName' : 'editor.addressIp');
-    option.textContent = `${link.host} — ${kind}`;
     return option;
   }));
   el['no-address'].hidden = links.length > 0;
@@ -56,32 +525,34 @@ async function loadLinks() {
   showQr();
 }
 
+// With a phone connected the QR code only takes space, so it folds away.
+function renderConnect() {
+  el.phones.textContent = phones ? t('editor.phones', { n: phones }) : t('editor.waiting');
+  el.phones.classList.toggle('waiting', !phones);
+  el['show-qr'].hidden = !phones;
+  el['show-qr'].textContent = t(showQrAnyway ? 'editor.hideQr' : 'editor.showQr');
+  el['connect-body'].hidden = phones > 0 && !showQrAnyway;
+}
+
 function renderStatus(status) {
   el.offline.hidden = true;
   el.fake.hidden = !status.fake_input;
-  el.phones.textContent = status.phones ? t('editor.phones', { n: status.phones }) : t('editor.waiting');
-  el.phones.classList.toggle('waiting', !status.phones);
-  el.folder.textContent = status.panels_dir;
   el.version.textContent = `Game Remote ${status.version}`;
+  phones = status.phones;
+  renderConnect();
 
-  const panels = status.panels.map((panel) => item('',
-    span('', panel.name),
-    span('count', t('editor.buttons', { n: panel.buttons }))));
-  const errors = Object.entries(status.panel_errors).map(([id, error]) => {
-    const small = document.createElement('small');
-    small.textContent = error;
-    return item('error', span('', `${id} — ${t('editor.panelError')}`), small);
-  });
-  el.panels.replaceChildren(...panels, ...errors);
-  if (!panels.length && !errors.length) el.panels.append(empty('editor.noPanels'));
-
-  el.recent.replaceChildren(...status.recent.slice(0, 8).map((press) => {
-    const what = span('', `${press.panel} · ${press.button}`);
-    what.append(span('keys', press.keys));
+  el.recent.replaceChildren(...status.recent.slice(0, 6).map((press) => {
+    const what = node('span', '', `${press.panel} · ${press.button}`);
+    what.append(node('span', 'keys', press.keys));
     const result = press.ok ? t('editor.sent') : `${t('editor.rejected')}: ${t(`reason.${press.reason}`)}`;
-    return item(press.ok ? '' : 'rejected', what, span('result', result));
+    const li = node('li', press.ok ? '' : 'rejected');
+    li.append(what, node('span', 'result', result));
+    return li;
   }));
-  if (!status.recent.length) el.recent.append(empty('editor.noRecent'));
+  if (!status.recent.length) el.recent.append(node('li', 'empty', t('editor.noRecent')));
+
+  // The panel files changed without this page: someone edited them by hand.
+  if (status.revision !== revision && !dirty.size && !saving) loadPanels().catch(() => {});
 }
 
 async function refresh() {
@@ -92,13 +563,84 @@ async function refresh() {
   }
 }
 
-el.address.addEventListener('change', showQr);
-el['open-folder'].addEventListener('click', () => api('/api/open-panels-folder', { method: 'POST' }));
-el.quit.addEventListener('click', () => api('/api/quit', { method: 'POST' }).then(refresh, refresh));
-el.release.addEventListener('click', () => api('/api/release-keys', { method: 'POST' }).then(refresh));
+// ---- wiring ----------------------------------------------------------------
 
-applyTexts();
-loadLinks().catch(() => { el.offline.hidden = false; });
-refresh();
-setInterval(refresh, 1500);
-setInterval(() => loadLinks().catch(() => {}), 15000);
+function report(action) {
+  return (...args) => Promise.resolve(action(...args)).catch((error) => setSaveState('error', error.message));
+}
+
+el['add-game'].addEventListener('click', report(addGame));
+el['delete-game'].addEventListener('click', report(deleteGame));
+el['game-name'].addEventListener('input', () => {
+  currentPanel().name = el['game-name'].value;
+  renderGames();
+  renderPreview();
+  changed();
+});
+el['columns-less'].addEventListener('click', () => changeColumns(-1));
+el['columns-more'].addEventListener('click', () => changeColumns(1));
+el['add-button'].addEventListener('click', addButton);
+el['button-label'].addEventListener('input', () => {
+  const button = selectedButton();
+  button.label = el['button-label'].value;
+  renderButtons();
+  renderPreview();
+  if (button.keys) changed();
+});
+el.record.addEventListener('click', () => (capture ? stopCapture() : startCapture()));
+for (const choice of el['button-type'].children) {
+  choice.addEventListener('click', () => {
+    const button = selectedButton();
+    button.type = choice.dataset.type;
+    fillButtonForm();
+    renderButtons();
+    renderPreview();
+    if (button.keys) changed();
+  });
+}
+for (const box of el.manual.querySelectorAll('input[data-mod]')) box.addEventListener('change', manualChanged);
+el['manual-key'].addEventListener('change', manualChanged);
+el['duplicate-button'].addEventListener('click', duplicateButton);
+el['delete-button'].addEventListener('click', deleteButton);
+el.rotate.addEventListener('click', () => { wide = !wide; renderPreview(); });
+el.address.addEventListener('change', showQr);
+el['show-qr'].addEventListener('click', () => { showQrAnyway = !showQrAnyway; renderConnect(); });
+el['open-folder'].addEventListener('click', report(() => api('/api/open-panels-folder', { method: 'POST' })));
+el.release.addEventListener('click', report(() => api('/api/release-keys', { method: 'POST' }).then(refresh)));
+el.quit.addEventListener('click', () => api('/api/quit', { method: 'POST' }).then(refresh, refresh));
+// Do not lose the last edit when the tab is closed right after typing.
+window.addEventListener('pagehide', () => {
+  for (const id of dirty) {
+    const panel = panels.find((candidate) => candidate.id === id);
+    if (panel?.name.trim()) {
+      fetch(`/api/panels/${id}`, {
+        method: 'PUT',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(forFile(panel)),
+      });
+    }
+  }
+});
+
+async function start() {
+  applyTexts();
+  buildColors();
+  const keys = await api('/api/keys');
+  keyLabels = new Map(keys.keys.map((key) => [key.code, key.label]));
+  modifiers = keys.modifiers;
+  const empty = node('option', '', '—');
+  empty.value = '';
+  el['manual-key'].replaceChildren(empty, ...keys.keys.filter((key) => !key.modifier).map((key) => {
+    const option = node('option', '', key.label);
+    option.value = key.code;
+    return option;
+  }));
+  await loadPanels();
+  loadLinks().catch(() => {});
+  refresh();
+  setInterval(refresh, 1500);
+  setInterval(() => loadLinks().catch(() => {}), 15000);
+}
+
+start().catch(() => { el.offline.hidden = false; });

@@ -56,6 +56,10 @@ class Settings:
         return self.data_dir / "panels"
 
     @property
+    def trash_dir(self) -> Path:
+        return self.data_dir / "trash"
+
+    @property
     def editor_url(self) -> str:
         return f"http://{self.editor_host}:{self.editor_port}/"
 

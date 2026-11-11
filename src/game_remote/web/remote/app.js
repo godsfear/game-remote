@@ -1,4 +1,5 @@
 import { applyTexts, t } from '/shared/i18n.js';
+import { columnsFor, renderGrid } from '/shared/panel-view.js';
 
 const KEY_STORE = 'gameRemote.key';
 const PANEL_STORE = 'gameRemote.panel';
@@ -184,28 +185,9 @@ function releaseAll() {
   pressed.clear();
 }
 
-function buttonNode(button) {
-  const node = document.createElement('button');
-  node.type = 'button';
-  node.className = `btn ${button.type}`;
-  node.dataset.button = button.id;
-  if (button.color) node.style.setProperty('--color', button.color);
-  if (button.image) {
-    const img = document.createElement('img');
-    img.src = button.image;
-    img.alt = '';
-    img.draggable = false;
-    img.onerror = () => { img.remove(); node.classList.remove('has-image'); };
-    node.append(img);
-    node.classList.add('has-image');
-  }
-  const label = document.createElement('span');
-  label.className = 'label';
-  label.textContent = button.label;
-  node.append(label);
-
-  // Act on touch, not on release, and follow each finger separately so that
-  // one button can be held while another is tapped.
+// Act on touch, not on release, and follow each finger separately so that
+// one button can be held while another is tapped.
+function listen(node, button) {
   node.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     try { node.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
@@ -214,7 +196,6 @@ function buttonNode(button) {
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     node.addEventListener(type, (event) => release(button, event.pointerId));
   }
-  return node;
 }
 
 function render() {
@@ -232,17 +213,21 @@ function render() {
     return;
   }
   showMessage('');
-  layout();
-  el.grid.append(...panel.buttons.map(buttonNode));
+  const nodes = renderGrid(el.grid, panel, { wide: isWide() });
+  el.grid.classList.toggle('wide', isWide());
+  nodes.forEach((node, index) => listen(node, panel.buttons[index]));
 }
 
-// Portrait uses the panel's own column count; a wide screen fits more per row.
+function isWide() {
+  return window.innerWidth > window.innerHeight * 1.2;
+}
+
+// On rotation only the column count changes; the buttons and held fingers stay.
 function layout() {
   const panel = currentPanel();
   if (!panel) return;
-  const wide = window.innerWidth > window.innerHeight * 1.2;
-  const columns = wide ? Math.min(panel.buttons.length, panel.columns * 2) : panel.columns;
-  el.grid.style.setProperty('--cols', String(Math.max(1, columns)));
+  el.grid.style.setProperty('--cols', String(columnsFor(panel, isWide())));
+  el.grid.classList.toggle('wide', isWide());
 }
 
 // ---- panel list ------------------------------------------------------------
