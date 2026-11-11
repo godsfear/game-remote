@@ -16,6 +16,7 @@ import webbrowser
 import uvicorn
 
 from game_remote.config import Settings
+from game_remote.input import InputError
 from game_remote.logging_setup import setup_logging
 from game_remote.server.editor import create_editor_app
 from game_remote.server.remote import create_remote_app
@@ -94,7 +95,10 @@ async def serve(state: AppState, tray: bool = False) -> None:
         state.stop = None
         for task in helpers:
             task.cancel()
-        state.controller.release_all()
+        try:
+            state.controller.release_all()
+        except InputError:
+            log.exception("Could not release every key on exit")
         if icon is not None:
             with contextlib.suppress(Exception):
                 icon.stop()

@@ -62,7 +62,11 @@ const waiting = new Map();
 function takeCodeFromLink() {
   const match = /(?:^#|&)pair=([^&]+)/.exec(location.hash);
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-  return match ? decodeURIComponent(match[1]) : null;
+  try {
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null; // a damaged link: the page asks to scan the code again
+  }
 }
 
 // The name this device gets in the list on the PC; it can be changed there.

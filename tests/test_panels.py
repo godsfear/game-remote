@@ -145,3 +145,10 @@ def test_demo_panel_follows_the_system_language(tmp_path, monkeypatch, lang, nam
     store.ensure_demo()
     store.load()
     assert store.panels["demo"].panel.name == name
+
+
+def test_a_game_named_like_a_windows_device_gets_a_usable_folder(tmp_path):
+    store = PanelStore(tmp_path / "panels")
+    assert store.create("CON") == "game-con"
+    assert store.create("Com1") == "game-com1"
+    assert store.create("Console") == "console"

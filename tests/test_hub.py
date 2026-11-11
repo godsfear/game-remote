@@ -1,6 +1,7 @@
 """The phone -> PC channel, driven through the remote app."""
 
 import json
+import time
 
 import pytest
 from conftest import phone_key, wait_for
@@ -250,7 +251,17 @@ def test_input_failure_is_reported(state, monkeypatch):
         assert press(ws, "down", "map")["reason"] == "input_error"
         assert press(ws, "down", "forward")["reason"] == "input_error"
         monkeypatch.undo()
+        state.backend.clear()
+        # A refused press must not be remembered as a key that is down:
+        # the next presses really go to Windows.
         assert press(ws, "down", "forward")["ok"]
+        assert press(ws, "up", "forward")["ok"]
+        assert press(ws, "down", "map")["ok"]
+        deadline = time.monotonic() + 2
+        while len(state.backend.trace()) < 4 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert state.backend.trace() == ["+KeyW", "-KeyW", "+KeyM", "-KeyM"]
+        assert state.controller.held_keys == set()
 
 
 def test_panel_images_are_served_only_from_the_panel(state, tmp_path):

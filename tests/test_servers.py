@@ -4,6 +4,7 @@ from conftest import phone_key
 from fastapi.testclient import TestClient
 
 from game_remote.config import Settings
+from game_remote.input import InputError
 from game_remote.server.editor import create_editor_app, phone_links
 from game_remote.server.remote import create_remote_app
 
@@ -103,6 +104,28 @@ def test_release_keys_from_the_editor(state):
         # The phone still thinks the button is down; its "up" must not break anything.
         ws.send_json({"type": "up", "id": 2, "panel": "demo", "button": "forward"})
         assert ws.receive_json()["ok"]
+    assert state.backend.trace() == ["+KeyW", "-KeyW"]
+
+
+def test_release_keys_when_windows_refuses(state, monkeypatch):
+    remote = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
+    editor = editor_client(state)
+    with remote.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "hello", "key": phone_key(state)})
+        ws.receive_json()
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "forward"})
+        ws.receive_json()
+
+        def fail(events):
+            raise InputError("blocked")
+
+        monkeypatch.setattr(state.backend, "send", fail)
+        assert editor.post("/api/release-keys", headers={"origin": EDITOR}).json() == {"ok": False}
+        # The key may still be down, and the page keeps saying so.
+        assert editor.get("/api/status").json()["held_keys"] == ["KeyW"]
+        monkeypatch.undo()
+        assert editor.post("/api/release-keys", headers={"origin": EDITOR}).json() == {"ok": True}
+        assert editor.get("/api/status").json()["held_keys"] == []
     assert state.backend.trace() == ["+KeyW", "-KeyW"]
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import sys
 
@@ -13,12 +14,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from game_remote import __version__
+from game_remote.input import InputError
 from game_remote.input.keys import MODIFIERS, SCAN_CODES, is_modifier, key_label
 from game_remote.netinfo import lan_addresses, local_name
 from game_remote.panels import MAX_IMAGE_BYTES, ImageError, Panel, short_error
 from game_remote.state import AppState
 from game_remote.user_settings import UserSettings, save_user_settings
 from game_remote.web import web_dir
+
+log = logging.getLogger(__name__)
 
 BODY = Body(...)
 
@@ -248,7 +252,11 @@ def create_editor_app(state: AppState) -> FastAPI:
     async def release_keys() -> dict:
         for conn in list(state.hub.connections.values()):
             conn.held.clear()
-        state.controller.release_all()
+        try:
+            state.controller.release_all()
+        except InputError:
+            log.exception("Could not release every key")
+            return {"ok": False}
         return {"ok": True}
 
     @app.post("/api/quit")

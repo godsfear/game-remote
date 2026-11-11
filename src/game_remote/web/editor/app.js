@@ -59,7 +59,11 @@ async function api(path, options = {}) {
   const response = await fetch(path, init);
   let data = null;
   try { data = await response.json(); } catch { /* no body */ }
-  if (!response.ok) throw new Error(data?.error || `${path}: ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data?.error || `${path}: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -136,6 +140,11 @@ async function save() {
   clearTimeout(saveTimer);
   if (saving) return; // the running save starts another one when it ends
   saving = true;
+  // Panels that did not reach the PC stay marked as changed: the next change
+  // or closing the tab tries again, and until then the page does not replace
+  // the edit with the older file.
+  const failed = [];
+  let problem = '';
   try {
     while (dirty.size) {
       const id = dirty.values().next().value;
@@ -143,18 +152,23 @@ async function save() {
       const panel = panels.find((candidate) => candidate.id === id);
       if (!panel) continue;
       if (!panel.name.trim()) {
-        setSaveState('error', t('editor.needName'));
-        return;
+        failed.push(id);
+        problem = t('editor.needName');
+        continue;
       }
-      const result = await api(`/api/panels/${id}`, { method: 'PUT', body: forFile(panel) });
-      revision = result.revision;
+      try {
+        const result = await api(`/api/panels/${id}`, { method: 'PUT', body: forFile(panel) });
+        revision = result.revision;
+      } catch (error) {
+        if (error.status !== 404) failed.push(id); // 404: the game was deleted meanwhile
+        problem = error.message;
+      }
     }
-    setSaveState('saved');
-  } catch (error) {
-    setSaveState('error', error.message);
   } finally {
+    for (const id of failed) dirty.add(id);
     saving = false;
   }
+  setSaveState(problem ? 'error' : 'saved', problem);
 }
 
 // ---- games -----------------------------------------------------------------

@@ -467,6 +467,41 @@ async function main() {
 
   ok('no errors in the browser console', errors.length === 0, errors.join(' | '));
 
+  // ---- a save that fails is tried again ------------------------------------
+  // Comes after the console check: the refused request is an error there by design.
+  const addGame = async (name) => {
+    await desk.click('#add-game');
+    await desk.waitForFunction(() => document.activeElement?.id === 'game-name');
+    await desk.keyboard.type(name);
+    await saved();
+  };
+  await addGame('First');
+  await addGame('Second');
+  await desk.route('**/api/panels/game', (route) => (
+    route.request().method() === 'PUT' ? route.fulfill({ status: 500, body: '{}' }) : route.continue()
+  ));
+  await desk.click('#game-list button[data-panel="game"]');
+  await desk.click('#columns-more');
+  ok('a failed save is reported', await until(() => desk.locator('#save-state.error').count()));
+  await desk.unroute('**/api/panels/game');
+  await desk.click('#game-list button[data-panel="game-2"]');
+  await desk.click('#columns-more');
+  await saved();
+  ok('a save that failed is tried again with the next one',
+    (await stored('game')).columns === 4 && (await stored('game-2')).columns === 4);
+  for (const id of ['game', 'game-2']) {
+    await desk.click(`#game-list button[data-panel="${id}"]`);
+    await desk.click('#delete-game');
+    await until(async () => !(await stored(id)));
+  }
+
+  // A link with a damaged code still opens the page.
+  const damaged = await stranger.newPage();
+  await damaged.goto(`${remote}/#pair=%E0%A4%A`);
+  await damaged.waitForSelector('#message:not([hidden])');
+  ok('a damaged link asks to scan', (await damaged.locator('#message').textContent()).includes('Scan the QR code'));
+  await damaged.close();
+
   // ---- the PC disappears while a key is held --------------------------------
   await touch('touchStart', [{ ...fwd, id: 1 }]);
   await until(async () => (await held()) === '["KeyW"]');
