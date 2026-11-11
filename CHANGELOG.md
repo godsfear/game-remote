@@ -1,12 +1,22 @@
 # Изменения / Changelog
 
-## Не выпущено / Unreleased
+## 0.2.0
 
-- Экраны: кнопки одной игры можно разложить по нескольким экранам (до восьми). На телефоне между ними переключают вкладки под названием игры, одним касанием. Игры без экранов работают как раньше.
-- У готовой панели Star Citizen появились обложка и два экрана: «Взлёт/Посадка» с шестью кнопками и пустой «Полёт».
+Экраны кнопок: у одной игры теперь может быть несколько наборов кнопок.
 
-- Screens: the buttons of one game can be grouped into several screens (up to eight). On the phone, tabs under the game's name switch between them with one touch. Games without screens work as before.
-- The ready-made Star Citizen panel has a cover and two screens: "Takeoff/Landing" with the six buttons and an empty "Flight".
+- Кнопки игры можно разложить по экранам, до восьми. В редакторе: «Добавить экран» над списком кнопок, у каждого экрана своё название, кнопку можно перенести на другой экран.
+- На телефоне под названием игры появляются вкладки. Экран переключается одним касанием, в том числе вторым пальцем, пока первый держит кнопку. Пульт помнит, какой экран был открыт у каждой игры.
+- Готовая панель Star Citizen при первом запуске идёт с обложкой и двумя экранами: «Взлёт/Посадка» с шестью кнопками и пустой «Полёт». Панель, которая уже стоит на ПК, не меняется.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Игры без экранов открываются и в версии 0.1.0, игры с экранами — только в этой.
+
+Screens: one game can now have several sets of buttons.
+
+- The buttons of a game can be grouped into screens, up to eight. In the editor: "Add a screen" above the list of buttons, every screen has its own name, and a button can be moved to another screen.
+- On the phone, tabs appear under the game's name. One touch switches the screen, also with a second finger while the first one holds a button. The phone remembers the screen it showed for every game.
+- On the first start the ready-made Star Citizen panel comes with a cover and two screens: "Takeoff/Landing" with the six buttons and an empty "Flight". A panel that is already on the PC is not changed.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Games without screens still open in version 0.1.0; games with screens need this one.
 
 ## 0.1.0
 
