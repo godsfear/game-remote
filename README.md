@@ -18,6 +18,8 @@ Game Remote превращает телефон или планшет в пул�
 - **Один файл на ПК.** `GameRemote.exe` запускается двойным щелчком, Python не нужен.
 - **Своя панель у каждой игры:** подписи, цвета, картинки, фон, сочетания клавиш, порядок кнопок.
 - **Кнопки «нажать» и «держать»,** можно нажимать несколько сразу.
+- **Экраны:** кнопки одной игры раскладываются по нескольким экранам, на телефоне их переключают вкладки.
+- **Наборы:** игру можно сохранить в один файл и поделиться ею, чужой набор — импортировать. У набора могут быть подписи на нескольких языках.
 - **Привязка к окну игры:** нажатие не попадёт в чат или браузер.
 - **Только ваши устройства:** одноразовый код в QR, свой ключ у каждого телефона, отключение любого из них на ПК.
 - Интерфейс на русском и английском.
@@ -53,6 +55,8 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 - **One file on the PC.** `GameRemote.exe` starts with a double click; no Python needed.
 - **A panel per game:** labels, colours, pictures, a background, keyboard shortcuts, button order.
 - **Tap and hold buttons,** several at a time.
+- **Screens:** the buttons of one game can be grouped into several screens; tabs on the phone switch between them.
+- **Sets:** a game can be saved into one file and shared, and someone else's set imported. A set can carry its labels in several languages.
 - **Bound to the game's window:** a press never lands in a chat or a browser.
 - **Your devices only:** a one-time code in the QR link, a key per phone, and any of them can be disconnected on the PC.
 - English and Russian interface.

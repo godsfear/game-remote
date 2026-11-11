@@ -81,7 +81,7 @@ def build_state(
             store.install_sample()
             user = user.model_copy(update={"samples": [*user.samples, SAMPLE_ID]})
             save_user_settings(settings.user_settings_path, user)
-        except OSError:
+        except (OSError, ValueError):  # ValueError: the packaged set could not be read
             log.exception("Could not install the ready-made panel")
     store.load()
     if remove_legacy_key(settings.data_dir):

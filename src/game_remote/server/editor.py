@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
 import sys
 
 import segno
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -17,7 +18,14 @@ from game_remote import __version__
 from game_remote.input import InputError
 from game_remote.input.keys import MODIFIERS, SCAN_CODES, is_modifier, key_label
 from game_remote.netinfo import lan_addresses, local_name
-from game_remote.panels import MAX_IMAGE_BYTES, ImageError, Panel, short_error
+from game_remote.panels import (
+    MAX_IMAGE_BYTES,
+    MAX_SET_BYTES,
+    ImageError,
+    Panel,
+    pack_set,
+    short_error,
+)
 from game_remote.state import AppState
 from game_remote.user_settings import Language, save_user_settings
 from game_remote.web import web_dir
@@ -25,6 +33,10 @@ from game_remote.web import web_dir
 log = logging.getLogger(__name__)
 
 BODY = Body(...)
+# The language the texts of an exported game are in, e.g. "ru".
+LANGUAGE = Query(default=None, pattern="^[a-z]{2}$")
+# The languages the user reads, best first, e.g. "de,en". A browser may name none.
+LANGUAGES = Query(default=None, pattern="^([a-z]{2}(,[a-z]{2}){0,9})?$")
 
 
 class NewPanel(BaseModel):
@@ -37,6 +49,18 @@ class LanguageChoice(BaseModel):
 
 class DeviceName(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+
+
+async def body_within(request: Request, limit: int) -> bytes | None:
+    """The body of the request, or None once it is larger than ``limit``. It is
+    counted while it arrives: the size a request declares can be absent or wrong."""
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def allowed_hosts(port: int) -> set[str]:
@@ -214,17 +238,52 @@ def create_editor_app(state: AppState) -> FastAPI:
     @app.post("/api/panels/{panel_id}/images", status_code=201)
     async def upload_image(panel_id: str, request: Request) -> Response:
         """The body is the picture itself. The page shrinks it before sending."""
-        declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+        data = await body_within(request, MAX_IMAGE_BYTES)
+        if data is None:
             return JSONResponse({"error": "too_large"}, status_code=413)
         try:
-            name = state.store.add_image(panel_id, await request.body())
+            name = state.store.add_image(panel_id, data)
         except KeyError:
             raise HTTPException(status_code=404) from None
         except ImageError as exc:
             status = 413 if str(exc) == "too_large" else 415
             return JSONResponse({"error": str(exc)}, status_code=status)
         return JSONResponse({"name": name}, status_code=201)
+
+    # -- sets: a game as a file to share ------------------------------------------
+
+    @app.get("/api/panels/{panel_id}/export")
+    async def export_set(panel_id: str, language: str | None = LANGUAGE) -> Response:
+        """The game as a zip. ``language`` is what its texts are written in."""
+        loaded = state.store.get(panel_id)
+        if loaded is None:
+            raise HTTPException(status_code=404)
+        # In a thread, like the import below: the phones are served by the same loop.
+        return Response(
+            await asyncio.to_thread(pack_set, loaded, language),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{panel_id}.zip"'},
+        )
+
+    @app.post("/api/sets", status_code=201)
+    async def import_set(request: Request, languages: str | None = LANGUAGES) -> Response:
+        """The body is the zip of a set. It becomes a new game in the first of
+        ``languages`` the set has."""
+        data = await body_within(request, MAX_SET_BYTES)
+        if data is None:
+            return JSONResponse({"error": "the file is too large"}, status_code=413)
+        wanted = languages.split(",") if languages else []
+        try:
+            # Unpacking takes a while for a large set; a thread keeps the phones served.
+            panel_id = await asyncio.to_thread(state.store.import_set, data, *wanted)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+        except OSError as exc:
+            log.exception("Could not write the imported set")
+            reason = exc.strerror or str(exc)
+            return JSONResponse({"error": f"the game was not written: {reason}"}, status_code=500)
+        await state.hub.broadcast_panels()
+        return JSONResponse({"id": panel_id, **panels_reply()}, status_code=201)
 
     @app.get("/api/settings")
     async def get_settings() -> dict:

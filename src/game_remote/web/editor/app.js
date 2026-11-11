@@ -1,4 +1,6 @@
-import { applyTexts, language as currentLanguage, setLanguage, t } from '/shared/i18n.js';
+import {
+  applyTexts, browserLanguages, language as currentLanguage, setLanguage, t,
+} from '/shared/i18n.js';
 import {
   renderGrid, renderTabs, screenIndex, screenView, showBackground,
 } from '/shared/panel-view.js';
@@ -23,6 +25,7 @@ const el = Object.fromEntries([
   'shape', 'window-name', 'window-choose', 'window-remove', 'window-list',
   'window-hint', 'add-screen', 'screen-tabs', 'screen-row', 'screen-name', 'delete-screen',
   'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
+  'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -51,7 +54,7 @@ let windowChoice = null; // open windows offered for the current game, or null
 let elevatedWindow = null; // id of the game that was just bound to an elevated program
 let capture = null; // { down: Set, all: [] } while a combo is being recorded
 let saveTimer = 0;
-let saving = false;
+let saving = null; // the save that runs now, as a promise
 const dirty = new Set(); // ids of panels with changes not yet on the PC
 
 const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
@@ -109,7 +112,9 @@ function setSaveState(state, detail = '') {
 // ---- loading and saving ----------------------------------------------------
 
 function takePanels(data) {
-  panels = data.panels;
+  // A game whose changes did not reach the PC keeps what the page has.
+  const unsaved = new Map(panels.filter((panel) => dirty.has(panel.id)).map((panel) => [panel.id, panel]));
+  panels = data.panels.map((panel) => unsaved.get(panel.id) || panel);
   panelErrors = data.errors;
   revision = data.revision;
   if (!currentPanel()) currentId = panels[0]?.id || null;
@@ -153,10 +158,16 @@ function forFile(panel) {
   };
 }
 
-async function save() {
+// Writes every changed game to the PC. A call during a save waits for that
+// save, which takes the games changed meanwhile too: whoever awaits this can
+// rely on the PC having what the page shows, unless a game is still in `dirty`.
+function save() {
   clearTimeout(saveTimer);
-  if (saving) return; // the running save starts another one when it ends
-  saving = true;
+  saving ||= writeChanges().finally(() => { saving = null; });
+  return saving;
+}
+
+async function writeChanges() {
   // Panels that did not reach the PC stay marked as changed: the next change
   // or closing the tab tries again, and until then the page does not replace
   // the edit with the older file.
@@ -183,7 +194,6 @@ async function save() {
     }
   } finally {
     for (const id of failed) dirty.add(id);
-    saving = false;
   }
   setSaveState(problem ? 'error' : 'saved', problem);
 }
@@ -250,6 +260,60 @@ async function deleteGame() {
   screen = 0;
   await loadPanels();
   setSaveState('saved');
+}
+
+// ---- sets: a game as a file to share ----------------------------------------
+
+// A set is marked with the language of its texts. Only the author knows it:
+// the page asks, and offers its own language as a guess.
+function askExportLanguage() {
+  if (!currentPanel()) return;
+  el['export-language'].value = currentLanguage();
+  el['export-dialog'].returnValue = '';
+  el['export-dialog'].showModal();
+  el['export-language'].select();
+}
+
+// Runs when that question is answered. The zip holds the game as the PC has
+// it, so a game that could not be saved is not exported: the page says why.
+async function exportSet() {
+  const panel = currentPanel();
+  if (!panel || el['export-dialog'].returnValue !== 'ok') return;
+  await save();
+  if (dirty.has(panel.id)) return;
+  const link = node('a');
+  link.href = `/api/panels/${panel.id}/export?language=${el['export-language'].value.toLowerCase()}`;
+  link.download = '';
+  link.click();
+}
+
+// The languages to look for in a set, best first: the one chosen on the PC for
+// every device, then those of this browser. The interface itself has fewer.
+function wantedLanguages() {
+  const chosen = el.language.value === 'auto' ? [] : [el.language.value];
+  return [...new Set([...chosen, ...browserLanguages()])]
+    .filter((code) => /^[a-z]{2}$/.test(code)).slice(0, 10);
+}
+
+// The set becomes a new game, in the first of these languages the set has.
+async function importSet() {
+  const [file] = el['set-file'].files;
+  if (!file) return;
+  await save();
+  const response = await fetch(`/api/sets?languages=${wantedLanguages().join(',')}`, {
+    method: 'POST',
+    body: file,
+    headers: { 'Content-Type': 'application/zip' },
+  });
+  let data = null;
+  try { data = await response.json(); } catch { /* no body */ }
+  if (!response.ok) throw new Error(`${t('editor.importError')} ${data?.error || response.status}`);
+  currentId = data.id;
+  selectedId = null;
+  screen = 0;
+  store.set(PANEL_STORE, currentId);
+  takePanels(data);
+  if (!dirty.size) setSaveState('saved'); // else the reason of the failed save stays
 }
 
 function fillGameForm() {
@@ -592,6 +656,11 @@ window.addEventListener('keyup', (event) => {
 }, true);
 
 window.addEventListener('blur', stopCapture);
+// Whoever goes to a field means to type there: the keys are text, not a
+// shortcut. This covers the fields of a dialog too.
+document.addEventListener('focusin', (event) => {
+  if (event.target.matches('input, select, textarea')) stopCapture();
+});
 
 function fillManual(button) {
   const codes = button.keys ? button.keys.split('+') : [];
@@ -895,12 +964,24 @@ async function refresh() {
 
 // ---- wiring ----------------------------------------------------------------
 
+// What an action could not do is said where the state of the save is, in its
+// own words: "not saved" would be untrue, the edits are on the PC.
 function report(action) {
-  return (...args) => Promise.resolve(action(...args)).catch((error) => setSaveState('error', error.message));
+  return (...args) => Promise.resolve(action(...args)).catch((error) => {
+    el['save-state'].className = 'error';
+    el['save-state'].textContent = error.message;
+  });
 }
 
 el['add-game'].addEventListener('click', report(addGame));
 el['delete-game'].addEventListener('click', report(deleteGame));
+el['export-set'].addEventListener('click', askExportLanguage);
+el['export-dialog'].addEventListener('close', report(exportSet));
+el['import-set'].addEventListener('click', () => {
+  el['set-file'].value = '';
+  el['set-file'].click();
+});
+el['set-file'].addEventListener('change', report(importSet));
 el['game-name'].addEventListener('input', () => {
   currentPanel().name = el['game-name'].value;
   renderGames();

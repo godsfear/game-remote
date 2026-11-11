@@ -1,5 +1,13 @@
 # Изменения / Changelog
 
+## Не выпущено / Unreleased
+
+- Наборы: игру можно экспортировать в zip и импортировать на другом ПК. В наборе кнопки, экраны и картинки.
+- Подписи набора могут быть на нескольких языках. При импорте берётся язык редактора или браузера, иначе английский, иначе язык автора.
+
+- Sets: a game can be exported as a zip and imported on another PC. A set holds the buttons, the screens and the pictures.
+- The texts of a set can come in several languages. An import takes the language of the editor or the browser, else English, else the language of the author.
+
 ## 0.2.0
 
 Экраны кнопок: у одной игры теперь может быть несколько наборов кнопок.

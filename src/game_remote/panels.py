@@ -11,13 +11,18 @@ The folder is also the exchange format: zip it and you have a panel file.
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import logging
+import lzma
 import os
 import re
 import secrets
 import shutil
+import tempfile
 import time
+import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -31,7 +36,8 @@ from game_remote.web import sample_dir
 log = logging.getLogger(__name__)
 
 PANEL_FILE = "panel.json"
-# The ready-made panel a new user starts with; its pictures ship with the program.
+# The ready-made panel a new user starts with: Star Citizen with the keys the
+# game has by default. It ships with the program as a set, in ``samples``.
 SAMPLE_ID = "star-citizen"
 # Folder of the demo panel that earlier versions created on the first run.
 OLD_DEMO_ID = "demo"
@@ -44,6 +50,11 @@ _UPLOAD_RE = re.compile(r"^img-[0-9a-f]{12}\.(png|jpg|webp)$")
 # Device names of Windows: a folder cannot be called like one of them.
 _RESERVED_RE = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")
 MAX_IMAGE_BYTES = 2_000_000
+# A set that arrives as a zip: the whole file, one of its texts, the files it may hold
+# (a picture for every button, a cover, a background and the translations).
+MAX_SET_BYTES = 50_000_000
+MAX_SET_TEXT_BYTES = 1_000_000
+MAX_SET_FILES = 250
 MAX_SCREENS = 8
 UNUSED_IMAGE_SECONDS = 600
 
@@ -92,6 +103,9 @@ class Panel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     format: Literal[1] = 1
+    # Only in a panel that is shared as a set (see PanelSet): the language its
+    # texts are in, e.g. "en". A panel in the user's own folder does not carry it.
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2}$")
     name: str = Field(min_length=1, max_length=60)
     columns: int = Field(default=3, ge=1, le=8)
     # Optional exe name of the game, e.g. "X4.exe". When set, presses are
@@ -130,6 +144,11 @@ class Panel(BaseModel):
 
     def button(self, button_id: str) -> Button | None:
         return next((b for b in self.buttons if b.id == button_id), None)
+
+    def images(self) -> set[str]:
+        """Names of the picture files the panel shows."""
+        names = {self.cover, self.background, *(b.image for b in self.buttons)}
+        return {name for name in names if name}
 
 
 @dataclass(frozen=True)
@@ -175,9 +194,7 @@ class LoadedPanel:
         also needs a picture that was uploaded a moment ago and is not saved
         into the panel yet.
         """
-        used = name in (self.panel.cover, self.panel.background) or any(
-            b.image == name for b in self.panel.buttons
-        )
+        used = name in self.panel.images()
         if not _IMAGE_RE.match(name) or (used_only and not used):
             return None
         path = self.folder / name
@@ -203,6 +220,186 @@ def short_error(exc: Exception) -> str:
     return str(exc)
 
 
+# -- sets: a panel as people share it ---------------------------------------------
+
+_TRANSLATION_RE = re.compile(r"^panel\.([a-z]{2})\.json$")
+# panel.json and whatever looks like a translation; read_set says if one is misnamed.
+_SET_TEXT_RE = re.compile(r"^panel(\.[A-Za-z0-9_-]+)?\.json$")
+
+
+class Translation(BaseModel):
+    """The texts of a panel in one more language: ``panel.ru.json`` next to
+    ``panel.json``. Keys and pictures are the same in every language."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    # Every screen of the panel, in the panel's order.
+    screens: list[Annotated[str, Field(min_length=1, max_length=24)]] | None = None
+    # Button id -> label. A button that is not listed keeps the label it has.
+    labels: dict[str, Annotated[str, Field(max_length=40)]] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PanelSet:
+    """A panel as people share it: the folder of a game with its pictures and,
+    next to ``panel.json``, the same texts in other languages."""
+
+    folder: Path
+    panel: Panel
+    translations: dict[str, Translation]
+
+    def in_language(self, *wanted: str) -> Panel:
+        """The panel a user gets: in the first of the ``wanted`` languages the
+        set has, else in English, else in the language the set was written in.
+        From then on it is a plain panel in one language."""
+        for language in (*wanted, "en"):
+            if language == self.panel.language:
+                break
+            texts = self.translations.get(language)
+            if texts is not None:
+                return self.panel.model_copy(
+                    update={
+                        "language": None,
+                        "name": texts.name or self.panel.name,
+                        "screens": texts.screens or self.panel.screens,
+                        "buttons": [
+                            button.model_copy(
+                                update={"label": texts.labels.get(button.id, button.label)}
+                            )
+                            for button in self.panel.buttons
+                        ],
+                    }
+                )
+        return self.panel.model_copy(update={"language": None})
+
+
+def read_set(folder: Path) -> PanelSet:
+    """Reads a set and checks that it is whole. A ValueError names the file
+    that is wrong."""
+
+    def read(name: str, model: type[BaseModel]) -> BaseModel:
+        try:
+            data = json.loads((folder / name).read_text(encoding="utf-8-sig"))
+            return model.model_validate(data)
+        except OSError as exc:  # without the path: for an import it is a temporary folder
+            raise ValueError(f"{name}: {exc.strerror or exc}") from exc
+        except ValueError as exc:
+            raise ValueError(f"{name}: {short_error(exc)}") from exc
+
+    if not (folder / PANEL_FILE).is_file():
+        raise ValueError(f"there is no {PANEL_FILE} in the set")
+    panel = read(PANEL_FILE, Panel)
+    for name in sorted(panel.images()):
+        if not (folder / name).is_file():
+            raise ValueError(f"{PANEL_FILE}: the picture {name} is not in the set")
+    translations: dict[str, Translation] = {}
+    for path in sorted(folder.glob("panel.*.json")):
+        match = _TRANSLATION_RE.match(path.name)
+        if match is None:
+            raise ValueError(f"{path.name}: a translation is called like panel.ru.json")
+        texts = read(path.name, Translation)
+        if match[1] == panel.language:
+            raise ValueError(f"{path.name}: {PANEL_FILE} is in this language already")
+        if texts.screens is not None and len(texts.screens) != len(panel.screens):
+            raise ValueError(f"{path.name}: the panel has {len(panel.screens)} screens")
+        unknown = sorted(set(texts.labels) - {button.id for button in panel.buttons})
+        if unknown:
+            raise ValueError(f"{path.name}: the panel has no button {unknown[0]!r}")
+        translations[match[1]] = texts
+    return PanelSet(folder, panel, translations)
+
+
+def pack_set(loaded: LoadedPanel, language: str | None) -> bytes:
+    """The panel as a zip that another PC can import: ``panel.json``, marked
+    with the language its texts are in, and the pictures it shows.
+
+    A picture whose file is gone is left out of ``panel.json`` too: the phone
+    shows that button without a picture, and the set stays whole."""
+    found = {name for name in loaded.panel.images() if (loaded.folder / name).is_file()}
+
+    def kept(name: str | None) -> str | None:
+        return name if name in found else None
+
+    source = loaded.panel
+    panel = source.model_copy(
+        update={
+            "language": language,
+            "cover": kept(source.cover),
+            "background": kept(source.background),
+            "buttons": [b.model_copy(update={"image": kept(b.image)}) for b in source.buttons],
+        }
+    )
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(PANEL_FILE, panel_text(panel))
+        for name in sorted(found):
+            archive.write(loaded.folder / name, name)
+    return out.getvalue()
+
+
+# What a damaged zip raises, depending on where the damage is and how the file
+# was compressed. ValueError and OSError come from deep inside ``zipfile`` and
+# the decompressors, with texts that say nothing to a user.
+_BAD_ZIP = (zipfile.BadZipFile, zlib.error, lzma.LZMAError, EOFError, ValueError, OSError)
+
+
+def unpack_set(data: bytes, folder: Path) -> None:
+    """Writes the files of a zipped set into the empty ``folder``.
+
+    The zip comes from a stranger. Only the texts and pictures of a set are
+    taken, each under its own name: the folders inside the zip do not matter
+    and cannot lead out of ``folder``. Sizes are counted while reading, not
+    taken from what the zip declares. A ValueError says what is wrong.
+    """
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except (*_BAD_ZIP, RuntimeError, NotImplementedError) as exc:
+        raise ValueError("not a zip file this program can read") from exc
+    with archive:
+        taken = 0
+        for info in archive.infolist():
+            name = info.filename.replace("\\", "/").rsplit("/", 1)[-1]
+            text = bool(_SET_TEXT_RE.match(name))
+            # Windows ignores spaces before the dot when it looks for a device name.
+            device = _RESERVED_RE.match(name.split(".")[0].strip().lower())
+            if info.is_dir() or device or not (text or _IMAGE_RE.match(name)):
+                continue  # a readme, a licence, the folders themselves
+            taken += 1
+            if taken > MAX_SET_FILES:
+                raise ValueError("too many files in the set")
+            if (folder / name).exists():
+                raise ValueError(f"{name}: twice in the zip")
+            limit = MAX_SET_TEXT_BYTES if text else MAX_IMAGE_BYTES
+            try:
+                with archive.open(info) as source:
+                    content = source.read(limit + 1)
+            except NotImplementedError as exc:  # before RuntimeError: it is one
+                raise ValueError(f"{name}: packed in a way this program cannot read") from exc
+            except RuntimeError as exc:
+                raise ValueError(f"{name}: the zip file has a password") from exc
+            except _BAD_ZIP as exc:
+                raise ValueError(f"{name}: the zip file is damaged") from exc
+            if len(content) > limit:
+                raise ValueError(f"{name}: the file is too large")
+            if not text and image_extension(content) is None:
+                raise ValueError(f"{name}: not a PNG, JPEG or WebP picture")
+            (folder / name).write_bytes(content)
+
+
+def _replace(source: Path, target: Path) -> None:
+    """``os.replace`` that waits a moment for a file somebody holds: on Windows
+    an antivirus or an editor does that to a file that was just written."""
+    for attempt in range(5):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05)
+
+
 class PanelStore:
     """Reads every panel folder. Files with mistakes are reported, not fatal."""
 
@@ -216,11 +413,19 @@ class PanelStore:
         # notice changes it did not make itself.
         self.revision = 0
         self._signature: tuple = ()
+        # True while import_set works in its thread: the watcher leaves the
+        # folder alone, and the new panel is announced once, by the import.
+        self._importing = False
 
     def _files(self) -> list[Path]:
         if not self.root.is_dir():
             return []
-        return sorted(p for p in self.root.glob(f"*/{PANEL_FILE}") if p.is_file())
+        # A folder that starts with a dot is a draft of install_set, not a game.
+        return sorted(
+            path
+            for path in self.root.glob(f"*/{PANEL_FILE}")
+            if path.is_file() and not path.parent.name.startswith(".")
+        )
 
     def signature(self) -> tuple:
         """Changes whenever a panel file is added, removed or edited."""
@@ -252,7 +457,7 @@ class PanelStore:
         self.revision += 1
 
     def reload_if_changed(self) -> bool:
-        if self.signature() == self._signature:
+        if self._importing or self.signature() == self._signature:
             return False
         self.load()
         return True
@@ -277,14 +482,7 @@ class PanelStore:
         # Write next to the file and swap, so a crash never leaves half a file.
         temporary = folder / (PANEL_FILE + ".tmp")
         temporary.write_text(panel_text(panel), encoding="utf-8")
-        for attempt in range(5):
-            try:
-                os.replace(temporary, folder / PANEL_FILE)
-                break
-            except PermissionError:  # Windows: antivirus or an editor holds the file
-                if attempt == 4:
-                    raise
-                time.sleep(0.05)
+        _replace(temporary, folder / PANEL_FILE)
         self._remove_unused_uploads(folder, panel)
         self.load()
 
@@ -305,7 +503,7 @@ class PanelStore:
     def _remove_unused_uploads(folder: Path, panel: Panel) -> None:
         """Delete replaced pictures. A fresh upload is kept: the page may not
         have saved the panel that points to it yet."""
-        used = {button.image for button in panel.buttons} | {panel.cover, panel.background}
+        used = panel.images()
         for path in folder.glob("img-*"):
             if not _UPLOAD_RE.match(path.name) or path.name in used:
                 continue
@@ -315,6 +513,12 @@ class PanelStore:
 
     def create(self, name: str) -> str:
         """Create an empty panel; returns its id (the folder name)."""
+        panel_id = self._free_id(name)
+        self.save(panel_id, Panel(name=name))
+        return panel_id
+
+    def _free_id(self, name: str) -> str:
+        """A folder name made from the name of the game that is not taken yet."""
         base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30].strip("-") or "game"
         if _RESERVED_RE.match(base):  # Windows cannot make a folder called "con" or "com1"
             base = f"game-{base}"
@@ -322,7 +526,22 @@ class PanelStore:
         while (self.root / panel_id).exists():
             number += 1
             panel_id = f"{base}-{number}"
-        self.save(panel_id, Panel(name=name))
+        return panel_id
+
+    def import_set(self, data: bytes, *languages: str) -> str:
+        """Add the set in a zip as a new panel, in the first of ``languages``
+        the set has; returns its id. A ValueError says what is wrong with the
+        file."""
+        self._importing = True
+        try:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporary:
+                unpack_set(data, Path(temporary))
+                panel_set = read_set(Path(temporary))
+                panel_id = self._free_id(panel_set.panel.name)
+                self.install_set(panel_set, panel_id, *languages)
+            self.load()
+        finally:
+            self._importing = False
         return panel_id
 
     def delete(self, panel_id: str) -> bool:
@@ -352,20 +571,27 @@ class PanelStore:
         if self._untouched_old_demo():
             self._to_trash(OLD_DEMO_ID)
             log.info("The demo panel of the earlier version was moved to the trash folder")
-        folder = self.root / SAMPLE_ID
-        if folder.exists():
+        if (self.root / SAMPLE_ID).exists():
             return False
-        # Built aside and moved in whole, so a failure leaves no half of a panel.
-        draft = self.root / f".{SAMPLE_ID}.tmp"
-        shutil.rmtree(draft, ignore_errors=True)
-        draft.mkdir(parents=True)
-        for path in sorted(sample_dir(SAMPLE_ID).iterdir()):
-            if _IMAGE_RE.match(path.name):
-                shutil.copyfile(path, draft / path.name)
-        panel = sample_panel(russian=system_language() == "ru")
-        (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
-        os.replace(draft, folder)
+        self.install_set(read_set(sample_dir(SAMPLE_ID)), SAMPLE_ID, system_language())
         return True
+
+    def install_set(self, panel_set: PanelSet, panel_id: str, *languages: str) -> None:
+        """Make a set one of the user's panels, in one language (see
+        ``PanelSet.in_language``). The caller chooses an id that is free."""
+        panel = panel_set.in_language(*languages)
+        # Built aside and moved in whole, so a failure leaves no half of a panel.
+        draft = self.root / f".{panel_id}.tmp"
+        shutil.rmtree(draft, ignore_errors=True)
+        try:
+            draft.mkdir(parents=True)
+            for name in sorted(panel.images()):
+                shutil.copyfile(panel_set.folder / name, draft / name)
+            (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
+            _replace(draft, self.root / panel_id)
+        except OSError:
+            shutil.rmtree(draft, ignore_errors=True)
+            raise
 
     def _untouched_old_demo(self) -> bool:
         folder = self.root / OLD_DEMO_ID
@@ -377,37 +603,6 @@ class PanelStore:
         except (OSError, ValueError):
             return False
         return panel in (demo_panel(russian=True), demo_panel(russian=False))
-
-
-def sample_panel(russian: bool) -> Panel:
-    """Star Citizen with the keys the game has by default. The pictures lie in
-    ``samples/star-citizen``. The second screen is empty: it shows a new user
-    that the buttons of a game can be grouped."""
-    labels = (
-        ("Flight Ready", "ATC", "Шасси", "Фары", "VTOL", "Карта")
-        if russian
-        else ("Flight Ready", "ATC", "Landing gear", "Lights", "VTOL", "Map")
-    )
-    spec = (
-        ("flight-ready", "AltRight+KeyR", "flight-ready.jpg"),
-        ("atc", "AltLeft+KeyN", "atc.jpg"),
-        ("landing-gear", "KeyN", "landing-gear.jpg"),
-        ("headlights", "KeyL", "headlights.jpg"),
-        ("vtol", "KeyK", "vtol.jpg"),
-        ("starmap", "F2", "starmap.jpg"),
-    )
-    return Panel(
-        name="Star Citizen",
-        columns=2,
-        shape="square",
-        cover="cover.jpg",
-        background="background.jpg",
-        screens=["Взлёт/Посадка", "Полёт"] if russian else ["Takeoff/Landing", "Flight"],
-        buttons=[
-            Button(id=bid, label=label, keys=keys, image=image)
-            for label, (bid, keys, image) in zip(labels, spec, strict=True)
-        ],
-    )
 
 
 def demo_panel(russian: bool) -> Panel:

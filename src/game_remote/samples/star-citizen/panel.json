@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "language": "en",
+  "name": "Star Citizen",
+  "columns": 2,
+  "shape": "square",
+  "cover": "cover.jpg",
+  "background": "background.jpg",
+  "screens": ["Takeoff/Landing", "Flight"],
+  "buttons": [
+    { "id": "flight-ready", "label": "Flight Ready", "keys": "AltRight+KeyR", "image": "flight-ready.jpg" },
+    { "id": "atc", "label": "ATC", "keys": "AltLeft+KeyN", "image": "atc.jpg" },
+    { "id": "landing-gear", "label": "Landing gear", "keys": "KeyN", "image": "landing-gear.jpg" },
+    { "id": "headlights", "label": "Lights", "keys": "KeyL", "image": "headlights.jpg" },
+    { "id": "vtol", "label": "VTOL", "keys": "KeyK", "image": "vtol.jpg" },
+    { "id": "starmap", "label": "Map", "keys": "F2", "image": "starmap.jpg" }
+  ]
+}

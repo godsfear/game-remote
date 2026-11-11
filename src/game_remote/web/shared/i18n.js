@@ -70,6 +70,11 @@ const TEXTS = {
     'editor.hideQr': 'Hide the QR code',
     'editor.games': 'Games',
     'editor.addGame': 'Add a game',
+    'editor.importSet': 'Import a set',
+    'editor.exportSet': 'Export as a set',
+    'editor.exportLanguage': 'Which language are the labels of this game in? Two letters, for example en or ru.',
+    'editor.exportDo': 'Export',
+    'editor.importError': 'The set was not imported:',
     'editor.newGame': 'New game',
     'editor.unnamed': 'No name',
     'editor.noGame': 'Add a game to make its panel of buttons.',
@@ -198,6 +203,11 @@ const TEXTS = {
     'editor.hideQr': 'Скрыть QR-код',
     'editor.games': 'Игры',
     'editor.addGame': 'Добавить игру',
+    'editor.importSet': 'Импортировать набор',
+    'editor.exportSet': 'Экспортировать набор',
+    'editor.exportLanguage': 'На каком языке подписи этой игры? Две буквы, например ru или en.',
+    'editor.exportDo': 'Экспортировать',
+    'editor.importError': 'Набор не импортирован:',
     'editor.newGame': 'Новая игра',
     'editor.unnamed': 'Без названия',
     'editor.noGame': 'Добавьте игру, чтобы собрать для неё панель кнопок.',
@@ -261,12 +271,13 @@ const TEXTS = {
 
 export const LANGUAGES = Object.keys(TEXTS);
 
-export function pickLanguage(preferred = navigator.languages || [navigator.language]) {
-  for (const tag of preferred) {
-    const short = String(tag || '').toLowerCase().split('-')[0];
-    if (TEXTS[short]) return short;
-  }
-  return 'en';
+// The languages of the browser, best first, without the country: "ru-RU" is "ru".
+export function browserLanguages(tags = navigator.languages || [navigator.language]) {
+  return tags.map((tag) => String(tag || '').toLowerCase().split('-')[0]);
+}
+
+export function pickLanguage(preferred) {
+  return browserLanguages(preferred).find((short) => TEXTS[short]) || 'en';
 }
 
 let current = pickLanguage();

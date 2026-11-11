@@ -43,7 +43,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .count { color: var(--muted); font-size: 14px; white-space: nowrap; }
 #panel-errors li { padding: 10px 12px; border-radius: 9px; background: #3a1f24; display: grid; gap: 2px; }
 #panel-errors small { color: #ffb4b4; overflow-wrap: anywhere; }
-#add-game, #add-button { width: 100%; }
+#add-game, #add-button, #import-set { width: 100%; }
+#import-set { margin-top: 8px; }
+dialog { max-width: 380px; padding: 18px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 14px; }
+dialog::backdrop { background: rgba(10, 11, 15, 0.7); }
 
 #phones { margin: 0 0 12px; font-weight: 600; color: var(--ok); }
 #phones.waiting { color: var(--muted); font-weight: 400; }

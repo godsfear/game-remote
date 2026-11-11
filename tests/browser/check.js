@@ -655,6 +655,98 @@ async function main() {
 
   ok('no errors in the browser console', errors.length === 0, errors.join(' | '));
 
+  // ---- sets: a game as a file to share ---------------------------------------
+  // After the console check: the refused file below is an error there by design.
+  const games = async () => (await (await fetch(`${editor}/api/panels`)).json()).panels;
+  // Whoever goes to a text field while a shortcut is recorded means to type there.
+  const keysBefore = (await games())[0].buttons[0].keys;
+  await desk.locator('#button-list li').first().click();
+  const labelBefore = await desk.locator('#button-label').inputValue();
+  await desk.click('#record');
+  await desk.click('#button-label');
+  await desk.keyboard.press('End');
+  await desk.keyboard.type('x');
+  ok('typing into a text field ends the recording of a shortcut',
+    (await desk.locator('#button-label').inputValue()) === `${labelBefore}x`
+    && (await desk.locator('#combo.recording').count()) === 0);
+  await desk.fill('#button-label', labelBefore);
+  await saved();
+  ok('and the keys typed there are not the shortcut of the button',
+    (await games())[0].buttons[0].keys === keysBefore);
+  // The same when the export asks its question.
+  await desk.click('#record');
+  await desk.click('#export-set');
+  ok('the export asks for the language of the labels and offers the one of the page',
+    /^(ru|en)$/.test(await desk.locator('#export-language').inputValue()));
+  await desk.fill('#export-language', '12');
+  await desk.click('#export-ok');
+  ok('an answer that is not two letters is not taken', await desk.locator('#export-dialog').evaluate((dialog) => dialog.open));
+  await desk.locator('#export-language').selectText();
+  await desk.keyboard.type('ru');
+  ok('the answer is typed into the question, not into the recording of a shortcut',
+    (await desk.locator('#export-language').inputValue()) === 'ru');
+  const [download] = await Promise.all([desk.waitForEvent('download'), desk.click('#export-ok')]);
+  ok('and the button keeps its shortcut', (await games())[0].buttons[0].keys === keysBefore);
+  ok('a game is exported as a zip named after its folder', download.suggestedFilename() === 'demo.zip');
+  const [setChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await setChooser.setFiles(await download.path());
+  ok('an imported set becomes a new game', await until(async () => (await games()).length === 2));
+  const [original, copy] = await games();
+  ok('with the same name and buttons', copy.name === original.name
+    && JSON.stringify(copy.buttons) === JSON.stringify(original.buttons));
+  ok('the editor opens the imported game', await until(async () => (
+    (await desk.locator('#game-list button[aria-current="true"]').getAttribute('data-panel')) === copy.id
+  )));
+  const [badChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await badChooser.setFiles({ name: 'notes.zip', mimeType: 'application/zip', buffer: Buffer.from('not a zip') });
+  ok('a file that is not a set is refused with a reason', await until(async () => (
+    (await desk.locator('#save-state.error').textContent()).includes('zip')
+  )));
+  ok('and the refusal does not read as a failed save',
+    !/Not saved|Не сохранено/.test(await desk.locator('#save-state').textContent()));
+
+  // A game that cannot be saved keeps what the page has when another game arrives.
+  await desk.click(`#game-list button[data-panel="${original.id}"]`);
+  const columnsShown = Number(await desk.locator('#columns').textContent());
+  await desk.fill('#game-name', '');
+  await desk.click('#columns-more');
+  const [thirdChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await thirdChooser.setFiles(await download.path());
+  await until(async () => (await games()).length === 3);
+  ok('the save that failed is still reported after the import',
+    await until(() => desk.locator('#save-state.error').count()));
+  await desk.click(`#game-list button[data-panel="${original.id}"]`);
+  ok('a game that could not be saved keeps its edits when a set is imported',
+    Number(await desk.locator('#columns').textContent()) === columnsShown + 1
+    && (await desk.locator('#game-name').inputValue()) === '');
+  await desk.fill('#game-name', original.name);
+  await saved();
+
+  // An export waits for a save that is on its way.
+  const order = [];
+  const noteExport = () => order.push('export'); // the download begins
+  const noteSave = (response) => { if (response.request().method() === 'PUT') order.push('saved'); };
+  desk.on('download', noteExport);
+  desk.on('response', noteSave);
+  await desk.route(`**/api/panels/${original.id}`, async (route) => {
+    if (route.request().method() === 'PUT') await new Promise((resolve) => { setTimeout(resolve, 700); });
+    await route.continue().catch(() => {}); // the route may be gone when the check fails
+  });
+  await desk.click('#columns-less');
+  await desk.waitForTimeout(600); // the save was sent and is held by the route above
+  await desk.click('#export-set');
+  await Promise.all([desk.waitForEvent('download'), desk.click('#export-ok')]);
+  ok('an export waits for the save that is on its way', order.join() === 'saved,export', order.join());
+  await desk.unroute(`**/api/panels/${original.id}`);
+  desk.off('download', noteExport);
+  desk.off('response', noteSave);
+
+  for (const game of (await games()).filter((candidate) => candidate.id !== original.id)) {
+    await desk.click(`#game-list button[data-panel="${game.id}"]`);
+    await desk.click('#delete-game');
+    await until(async () => !(await games()).some((candidate) => candidate.id === game.id));
+  }
+
   // ---- a save that fails is tried again ------------------------------------
   // Comes after the console check: the refused request is an error there by design.
   const addGame = async (name) => {

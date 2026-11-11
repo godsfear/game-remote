@@ -17,5 +17,5 @@ def web_dir(name: str) -> Path:
 
 
 def sample_dir(name: str) -> Path:
-    """Folder with the pictures of a ready-made panel."""
+    """Folder of a ready-made panel: a set, as ``panels.read_set`` reads it."""
     return packaged("samples", name)

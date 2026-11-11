@@ -1,11 +1,21 @@
+import io
 import json
 import sys
+import zipfile
 
 import pytest
 from pydantic import ValidationError
 
 from game_remote.config import Settings
-from game_remote.panels import SAMPLE_ID, Button, Panel, PanelStore, demo_panel, sample_panel
+from game_remote.panels import (
+    SAMPLE_ID,
+    Button,
+    Panel,
+    PanelStore,
+    demo_panel,
+    read_set,
+    unpack_set,
+)
 from game_remote.state import build_state
 from game_remote.web import sample_dir
 
@@ -61,9 +71,9 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
 
 
 def test_every_packaged_picture_belongs_to_the_ready_made_panel():
-    panel = sample_panel(russian=False)
-    used = {b.image for b in panel.buttons} | {panel.background, panel.cover}
-    assert {p.name for p in sample_dir(SAMPLE_ID).iterdir()} == used
+    used = read_set(sample_dir(SAMPLE_ID)).panel.images()
+    texts = {"panel.json", "panel.ru.json"}
+    assert {p.name for p in sample_dir(SAMPLE_ID).iterdir()} == used | texts
 
 
 def test_a_deleted_ready_made_panel_does_not_come_back(tmp_path):
@@ -116,7 +126,9 @@ def test_an_edited_demo_stays(tmp_path, change):
 
 @pytest.mark.parametrize("russian", [True, False])
 def test_packaged_panels_are_valid_in_both_languages(russian):
-    for panel in (demo_panel(russian), sample_panel(russian)):
+    sample = read_set(sample_dir(SAMPLE_ID)).in_language("ru" if russian else "en")
+    assert sample.language is None
+    for panel in (demo_panel(russian), sample):
         assert Panel.model_validate(panel.model_dump()) == panel
 
 
@@ -273,6 +285,147 @@ def test_ready_made_panel_follows_the_system_language(tmp_path, monkeypatch, lan
     assert not store.install_sample()
     store.load()
     assert store.panels[SAMPLE_ID].panel.buttons[2].label == label
+
+
+SET = {
+    "name": "Elite",
+    "language": "de",
+    "cover": "cover.png",
+    "screens": ["Flug", "Kampf"],
+    "buttons": [
+        {"id": "gear", "label": "Fahrwerk", "keys": "KeyN"},
+        {"id": "fire", "label": "Feuer", "keys": "KeyG", "screen": 1},
+    ],
+}
+RUSSIAN = {"name": "Элита", "screens": ["Полёт", "Бой"], "labels": {"gear": "Шасси"}}
+
+
+def write_set(root, panel=SET, **translations):
+    folder = write_panel(root, "elite", panel)
+    (folder / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    for language, texts in translations.items():
+        (folder / f"panel.{language}.json").write_text(json.dumps(texts), encoding="utf-8")
+    return folder
+
+
+def test_a_set_becomes_a_panel_in_one_language(tmp_path):
+    shared = read_set(write_set(tmp_path / "shared", ru=RUSSIAN, en={"labels": {"gear": "Gear"}}))
+
+    def labels(panel):
+        return [button.label for button in panel.buttons]
+
+    # The user's language if the set has it. A button without a translation
+    # keeps the label of the author.
+    russian = shared.in_language("ru")
+    assert (russian.name, russian.screens, labels(russian)) == (
+        "Элита",
+        ["Полёт", "Бой"],
+        ["Шасси", "Feuer"],
+    )
+    # The language of panel.json itself counts as one the set has.
+    assert labels(shared.in_language("de")) == ["Fahrwerk", "Feuer"]
+    # Else English, and without English what the author wrote.
+    assert labels(shared.in_language("fr")) == ["Gear", "Feuer"]
+    only_russian = read_set(write_set(tmp_path / "other", ru=RUSSIAN))
+    assert labels(only_russian.in_language("fr")) == ["Fahrwerk", "Feuer"]
+    # Several languages are tried in the order the user reads them.
+    assert labels(shared.in_language("fr", "ru", "en")) == ["Шасси", "Feuer"]
+    assert labels(shared.in_language("fr", "de", "ru")) == ["Fahrwerk", "Feuer"]
+    assert labels(shared.in_language()) == ["Gear", "Feuer"]
+
+    # In the user's folder it is a plain panel: its pictures, one language.
+    store = PanelStore(tmp_path / "panels")
+    store.install_set(shared, "elite", "ru")
+    store.load()
+    assert store.panels["elite"].panel == russian and russian.language is None
+    assert sorted(p.name for p in (tmp_path / "panels" / "elite").iterdir()) == [
+        "cover.png",
+        "panel.json",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("panel", "translations", "problem"),
+    [
+        (SET, {"ru": RUSSIAN | {"screens": ["Полёт"]}}, "panel.ru.json: the panel has 2 screens"),
+        (SET, {"ru": {"labels": {"map": "Карта"}}}, "panel.ru.json: the panel has no button 'map'"),
+        (SET, {"ru": {"keys": "KeyM"}}, "panel.ru.json: keys"),
+        (SET, {"de": {"name": "Elite"}}, "panel.de.json: panel.json is in this language"),
+        (SET, {"rus": RUSSIAN}, "panel.rus.json: a translation is called like"),
+        (SET | {"background": "space.png"}, {}, "panel.json: the picture space.png"),
+        (SET | {"language": "german"}, {}, "panel.json: language"),
+    ],
+)
+def test_a_set_with_a_mistake_names_the_file(tmp_path, panel, translations, problem):
+    with pytest.raises(ValueError, match=problem):
+        read_set(write_set(tmp_path, panel, **translations))
+
+
+def test_a_set_that_cannot_be_moved_in_leaves_no_draft(tmp_path, monkeypatch):
+    def refused(source, target):
+        raise PermissionError(13, "Access is denied")
+
+    shared = read_set(write_set(tmp_path / "shared"))
+    store = PanelStore(tmp_path / "panels")
+    store.root.mkdir()
+    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    with pytest.raises(PermissionError):
+        store.install_set(shared, "elite", "en")
+    assert list(store.root.iterdir()) == []
+
+    # A draft that a crash left behind is not taken for a game.
+    write_panel(store.root, ".elite.tmp", MINIMAL)
+    store.load()
+    assert store.panels == {} and store.errors == {}
+
+
+def test_a_zip_cannot_write_to_a_device_of_windows(tmp_path):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("panel.json", json.dumps(MINIMAL))
+        for name in ("con.png", "CON .png", "aux.jpg", "Com1.webp", "lpt9  .png", "nul.json"):
+            archive.writestr(name, b"\x89PNG\r\n\x1a\n")
+        archive.writestr("console.png", b"\x89PNG\r\n\x1a\n")  # only looks like one
+    unpack_set(out.getvalue(), tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["console.png", "panel.json"]
+
+
+def test_the_watcher_leaves_an_import_alone(tmp_path, monkeypatch):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("panel.json", json.dumps(MINIMAL))
+    store = PanelStore(tmp_path / "panels")
+    store.root.mkdir()
+    store.load()
+    seen = []
+    install = store.install_set
+
+    def install_and_look(*args):
+        install(*args)
+        # The folder is there and the import has not read it yet: the watcher
+        # must not announce the panel a second time.
+        seen.append(store.reload_if_changed())
+
+    monkeypatch.setattr(store, "install_set", install_and_look)
+    assert store.import_set(out.getvalue(), "en") == "x4"
+    assert seen == [False] and list(store.panels) == ["x4"]
+    assert not store.reload_if_changed()
+    # A refused file does not leave the watcher switched off.
+    with pytest.raises(ValueError, match="not a zip"):
+        store.import_set(b"nothing", "en")
+    write_panel(store.root, "second", MINIMAL)
+    assert store.reload_if_changed()
+
+
+def test_the_program_starts_without_a_ready_made_panel_it_cannot_read(tmp_path, monkeypatch):
+    def unreadable(folder):
+        raise ValueError("panel.json: Permission denied")
+
+    monkeypatch.setattr("game_remote.panels.read_set", unreadable)
+    state = started(tmp_path)
+    assert state.store.panels == {}
+    # Not marked as installed: the next start tries again.
+    assert not (tmp_path / "settings.json").exists()
 
 
 def test_a_game_named_like_a_windows_device_gets_a_usable_folder(tmp_path):

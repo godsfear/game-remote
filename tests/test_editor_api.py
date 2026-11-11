@@ -1,6 +1,11 @@
 """The editor's API for games and buttons."""
 
+import io
 import json
+import random
+import re
+import struct
+import zipfile
 
 import pytest
 from conftest import phone_key
@@ -180,3 +185,205 @@ def test_editor_serves_panel_images_for_the_preview(client, state):
     assert client.put("/api/panels/demo", json=data, headers=ORIGIN).status_code == 200
     assert client.get("/panel-files/demo/map.png").content == b"\x89PNG"
     assert client.get("/panel-files/demo/panel.json").status_code == 404
+
+
+# -- sets: a game as a file to share ------------------------------------------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+ZIP = {"origin": EDITOR, "content-type": "application/zip"}
+ELITE = {
+    "name": "Elite",
+    "language": "de",
+    "cover": "cover.png",
+    "buttons": [{"id": "gear", "label": "Fahrwerk", "keys": "KeyN", "image": "gear.png"}],
+}
+
+
+def zipped(files: dict) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content if isinstance(content, bytes) else json.dumps(content))
+    return out.getvalue()
+
+
+def test_a_game_is_exported_and_imported_as_a_set(client, state):
+    name = client.post("/api/panels/demo/images", content=PNG, headers=ORIGIN).json()["name"]
+    demo = client.get("/api/panels").json()["panels"][0]
+    demo = {key: value for key, value in demo.items() if key not in ("id", "language")}
+    client.put("/api/panels/demo", json=demo | {"cover": name}, headers=ORIGIN)
+
+    exported = client.get("/api/panels/demo/export?language=en")
+    assert exported.headers["content-disposition"] == 'attachment; filename="demo.zip"'
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        assert sorted(archive.namelist()) == sorted(["panel.json", name])
+        assert json.loads(archive.read("panel.json"))["language"] == "en"
+
+    imported = client.post("/api/sets?languages=ru", content=exported.content, headers=ZIP)
+    assert imported.status_code == 201 and imported.json()["id"] == "demo-2"
+    first, second = imported.json()["panels"]
+    assert {**second, "id": "demo"} == first
+    # The game on this PC is a plain panel: the mark of the language stays in the set.
+    assert "language" not in json.loads(panel_file(state, "demo-2").read_text(encoding="utf-8"))
+    assert client.get(f"/panel-files/demo-2/{name}").content == PNG
+    assert client.get("/api/panels/nope/export").status_code == 404
+
+
+def test_an_imported_set_takes_the_language_of_the_page(client, state):
+    # Zipped as a folder, the way Windows does it, with files a set does not need.
+    files = {
+        "elite/panel.json": ELITE,
+        "elite/panel.ru.json": {"name": "Элита", "labels": {"gear": "Шасси"}},
+        "elite/cover.png": PNG,
+        "elite/gear.png": PNG,
+        "elite/readme.txt": b"hello",
+        "__MACOSX/elite/._cover.png": b"junk",
+    }
+    # The first language the set has wins; German is what panel.json is in.
+    # A browser may name no language at all: that is not a mistake of the request.
+    cases = (
+        ("?languages=ru", "Элита", "Шасси"),
+        ("?languages=fr,ru,en", "Элита", "Шасси"),
+        ("?languages=fr", "Elite", "Fahrwerk"),
+        ("?languages=", "Elite", "Fahrwerk"),
+        ("", "Elite", "Fahrwerk"),
+    )
+    for query, name, label in cases:
+        reply = client.post(f"/api/sets{query}", content=zipped(files), headers=ZIP)
+        panel = reply.json()["panels"][-1]
+        assert (panel["name"], panel["buttons"][0]["label"]) == (name, label)
+    folder = state.settings.panels_dir / "elite"
+    assert sorted(p.name for p in folder.iterdir()) == ["cover.png", "gear.png", "panel.json"]
+
+
+@pytest.mark.parametrize(
+    ("files", "problem"),
+    [
+        (None, "not a zip"),
+        ({"readme.txt": b"no panel here"}, "there is no panel.json in the set"),
+        ({"panel.json": ELITE, "cover.png": PNG}, "the picture gear.png is not in the set"),
+        (
+            {"panel.json": ELITE, "cover.png": PNG, "gear.png": b"MZ not a picture"},
+            "gear.png: not a",
+        ),
+        ({"panel.json": ELITE, "cover.png": PNG, "a/gear.png": PNG, "b/gear.png": PNG}, "twice"),
+        ({"panel.json": ELITE | {"buttons": [{"id": "x", "keys": "Nope"}]}}, "panel.json: buttons"),
+        ({"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG + b"0" * 2_000_000}, "too large"),
+    ],
+)
+def test_a_bad_set_is_refused_and_leaves_nothing(client, state, files, problem):
+    body = b"just some bytes" if files is None else zipped(files)
+    reply = client.post("/api/sets", content=body, headers=ZIP)
+    assert reply.status_code == 422 and problem in reply.json()["error"], reply.json()
+    assert "\\" not in reply.json()["error"] and "/" not in reply.json()["error"]  # no paths
+    assert [p.name for p in state.settings.panels_dir.iterdir()] == ["demo"]
+
+
+def test_a_set_cannot_write_outside_its_folder(client, state):
+    files = {
+        "panel.json": ELITE,
+        "cover.png": PNG,
+        "../../gear.png": PNG,
+        "..\\..\\escape.png": PNG,
+        "/abs/evil.png": PNG,
+    }
+    assert client.post("/api/sets", content=zipped(files), headers=ZIP).status_code == 201
+    panels = state.settings.panels_dir
+    assert sorted(p.name for p in (panels / "elite").iterdir()) == [
+        "cover.png",
+        "gear.png",
+        "panel.json",
+    ]
+    strays = [p for p in panels.parent.rglob("*.png") if panels / "elite" not in p.parents]
+    assert strays == []
+
+
+def test_import_needs_the_editors_origin(client):
+    assert client.post("/api/sets", content=zipped({"panel.json": ELITE})).status_code == 403
+
+
+OWN_WORDS = r"[\w .-]+\.(json|png): |not a zip file this program can read$|there is no panel\.json"
+
+
+def test_a_damaged_zip_is_refused_not_a_crash(client):
+    out = io.BytesIO()
+    noise = bytes(random.Random(1).randrange(256) for _ in range(20_000)) + b"abc" * 5_000
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("panel.json", json.dumps(ELITE))
+        archive.writestr("cover.png", PNG + noise)
+        archive.writestr("gear.png", PNG + noise)
+    good = out.getvalue()
+    flip = random.Random(7)
+    seen = set()
+    for _ in range(300):
+        damaged = bytearray(good)
+        for _ in range(flip.randint(1, 4)):
+            damaged[flip.randrange(len(damaged))] ^= 1 << flip.randrange(8)
+        reply = client.post("/api/sets", content=bytes(damaged), headers=ZIP)
+        seen.add(reply.status_code)
+        assert reply.status_code in (201, 422), reply.text
+        # The reason is in this program's words: it names a file of the set or the zip.
+        said = reply.json().get("error", "")
+        assert reply.status_code == 201 or re.match(OWN_WORDS, said), said
+    assert seen == {201, 422}  # the damage did reach the data, and some of it is harmless
+    assert client.post("/api/sets", content=good[: len(good) // 2], headers=ZIP).status_code == 422
+
+
+def test_an_import_that_cannot_be_written_says_so_and_leaves_nothing(client, state, monkeypatch):
+    def refused(source, target):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    reply = client.post("/api/sets", content=zipped(files), headers=ZIP)
+    assert reply.status_code == 500
+    assert reply.json() == {"error": "the game was not written: Access is denied"}
+    assert [p.name for p in state.settings.panels_dir.iterdir()] == ["demo"]
+    assert client.get("/api/panels").json()["errors"] == {}
+
+
+def test_a_game_with_a_lost_picture_is_exported_as_a_whole_set(client, state):
+    files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    client.post("/api/sets", content=zipped(files), headers=ZIP)
+    (state.settings.panels_dir / "elite" / "gear.png").unlink()
+
+    exported = client.get("/api/panels/elite/export").content
+    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+        assert sorted(archive.namelist()) == ["cover.png", "panel.json"]
+    again = client.post("/api/sets", content=exported, headers=ZIP)
+    assert again.status_code == 201
+    copy = again.json()["panels"][-1]
+    assert (copy["cover"], copy["buttons"][0]["image"]) == ("cover.png", None)
+
+
+def test_the_size_of_an_upload_is_counted_not_believed(client, state, monkeypatch):
+    # A body sent in pieces declares no size at all.
+    monkeypatch.setattr("game_remote.server.editor.MAX_SET_BYTES", 1000)
+    pieces = (b"x" * 300 for _ in range(5))
+    reply = client.post("/api/sets", content=pieces, headers=ZIP)
+    assert (reply.status_code, reply.json()) == (413, {"error": "the file is too large"})
+    monkeypatch.setattr("game_remote.server.editor.MAX_IMAGE_BYTES", 1000)
+    pieces = (b"x" * 300 for _ in range(5))
+    reply = client.post("/api/panels/demo/images", content=pieces, headers=ORIGIN)
+    assert (reply.status_code, reply.json()) == (413, {"error": "too_large"})
+
+
+def test_a_zip_this_program_cannot_open_is_not_called_damaged(client):
+    good = zipped({"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG})
+
+    def with_headers(local_offset, central_offset, value):
+        """The zip with one field changed in the header of every file."""
+        data = bytearray(good)
+        for magic, offset in ((b"PK\x03\x04", local_offset), (b"PK\x01\x02", central_offset)):
+            at = data.find(magic)
+            while at != -1:
+                struct.pack_into("<H", data, at + offset, value)
+                at = data.find(magic, at + 4)
+        return bytes(data)
+
+    for body, reason in (
+        (with_headers(6, 8, 1), "has a password"),  # the flag "encrypted"
+        (with_headers(8, 10, 98), "packed in a way this program cannot read"),  # PPMd of 7-Zip
+    ):
+        reply = client.post("/api/sets", content=body, headers=ZIP)
+        assert reply.status_code == 422 and reason in reply.json()["error"], reply.json()

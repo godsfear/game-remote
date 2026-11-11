@@ -1,0 +1,8 @@
+{
+  "screens": ["Взлёт/Посадка", "Полёт"],
+  "labels": {
+    "landing-gear": "Шасси",
+    "headlights": "Фары",
+    "starmap": "Карта"
+  }
+}
