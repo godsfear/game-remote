@@ -3,6 +3,7 @@ name: Release
 # Builds GameRemote.exe and puts it into a draft release on GitHub.
 # Start it by pushing a tag such as v0.1.0, or by hand from the Actions page.
 # The draft is not visible to anyone until it is published on the Releases page.
+# Publishing creates the tag; the run that this starts sees the published release and stops.
 
 on:
   push:
@@ -17,7 +18,28 @@ permissions:
   contents: write
 
 jobs:
+  # Publishing a draft creates its tag, and that push starts this workflow again.
+  # A tag that already has a published release needs no second build.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.look.outputs.published }}
+    steps:
+      - id: look
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [ "$draft" = "false" ]; then
+            echo "Release $TAG is already published: nothing to build."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check
+    if: needs.check.outputs.published != 'true'
     runs-on: windows-latest
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
