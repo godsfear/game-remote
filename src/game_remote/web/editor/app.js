@@ -1,4 +1,4 @@
-import { applyTexts, setLanguage, t } from '/shared/i18n.js';
+import { applyTexts, language as currentLanguage, setLanguage, t } from '/shared/i18n.js';
 import { renderGrid } from '/shared/panel-view.js';
 
 const SAVE_DELAY_MS = 400;
@@ -15,6 +15,8 @@ const el = Object.fromEntries([
   'delete-button', 'preview-card', 'rotate', 'phone', 'phone-name', 'preview', 'preview-empty',
   'recent', 'release', 'version', 'open-folder', 'quit', 'cover-thumb', 'cover-choose',
   'cover-remove', 'image-thumb', 'image-choose', 'image-remove', 'file', 'language',
+  'device-list', 'copy-link', 'window-name', 'window-choose', 'window-remove', 'window-list',
+  'window-hint',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -34,6 +36,12 @@ let modifiers = [];
 let wide = false;
 let showQrAnyway = false;
 let phones = 0;
+let devices = []; // phones and tablets paired with this PC
+let renaming = null; // id of the device whose name is being typed
+let links = []; // addresses for the QR code, with the one-time code inside
+let pairing = 0; // changes when the code does
+let windowChoice = null; // open windows offered for the current game, or null
+let elevatedWindow = null; // id of the game that was just bound to an elevated program
 let capture = null; // { down: Set, all: [] } while a combo is being recorded
 let saveTimer = 0;
 let saving = false;
@@ -181,6 +189,7 @@ function renderGames() {
 function selectPanel(id) {
   if (id === currentId) return;
   stopCapture();
+  windowChoice = null;
   currentId = id;
   selectedId = null;
   store.set(PANEL_STORE, id || '');
@@ -219,6 +228,53 @@ function fillGameForm() {
   el['columns-less'].disabled = panel.columns <= 1;
   el['columns-more'].disabled = panel.columns >= 8;
   showThumb(el['cover-thumb'], el['cover-remove'], panel, panel.cover);
+  fillWindow(panel);
+}
+
+// ---- the game's window -----------------------------------------------------
+
+// A panel bound to a program presses keys only while that program's window is
+// active, so a press never lands in a chat or a browser by mistake.
+function fillWindow(panel) {
+  el['window-name'].textContent = panel.window || t('editor.anyWindow');
+  el['window-name'].classList.toggle('any', !panel.window);
+  el['window-remove'].hidden = !panel.window;
+  const elevated = panel.window && elevatedWindow === panel.id;
+  el['window-hint'].classList.toggle('warn', Boolean(elevated));
+  el['window-hint'].textContent = t(
+    elevated ? 'reason.elevated' : panel.window ? 'editor.windowBound' : 'editor.windowAny',
+  );
+  el['window-list'].hidden = !windowChoice;
+  if (!windowChoice) return;
+  const items = windowChoice.windows.map((found) => {
+    const button = node('button');
+    button.type = 'button';
+    button.dataset.exe = found.exe;
+    button.append(node('span', '', found.title), node('small', '', found.exe));
+    if (found.elevated) button.append(node('small', 'warn', t('editor.windowElevated')));
+    button.addEventListener('click', () => setWindow(found.exe, found.elevated));
+    const li = node('li');
+    li.append(button);
+    return li;
+  });
+  if (!items.length) {
+    items.push(node('li', 'empty', t(windowChoice.supported ? 'editor.noWindows' : 'editor.windowsOnly')));
+  }
+  el['window-list'].replaceChildren(...items);
+}
+
+async function chooseWindow() {
+  windowChoice = windowChoice ? null : await api('/api/windows');
+  fillWindow(currentPanel());
+}
+
+function setWindow(exe, elevated = false) {
+  const panel = currentPanel();
+  panel.window = exe;
+  elevatedWindow = exe && elevated ? panel.id : null;
+  windowChoice = null;
+  fillWindow(panel);
+  changed();
 }
 
 function changeColumns(step) {
@@ -587,12 +643,14 @@ function renderAll() {
 // ---- phone connection, status ----------------------------------------------
 
 function showQr() {
-  el.qr.src = `/api/qr/${el.address.value}.svg`;
+  el.qr.src = `/api/qr/${el.address.value}.svg?code=${pairing}`;
   el.qr.hidden = false;
 }
 
 async function loadLinks() {
-  const { links } = await api('/api/links');
+  const data = await api('/api/links');
+  links = data.links;
+  pairing = data.pairing;
   const chosen = el.address.value;
   el.address.replaceChildren(...links.map((link, index) => {
     const option = node('option', '', `${link.host} — ${t(link.kind === 'name' ? 'editor.addressName' : 'editor.addressIp')}`);
@@ -601,6 +659,7 @@ async function loadLinks() {
   }));
   el['no-address'].hidden = links.length > 0;
   el['address-row'].hidden = links.length < 2;
+  el['copy-link'].hidden = !links.length;
   if (!links.length) {
     el.qr.hidden = true;
     return;
@@ -609,13 +668,84 @@ async function loadLinks() {
   showQr();
 }
 
-// With a phone connected the QR code only takes space, so it folds away.
+// A paired device comes back by itself, so with one in the list the QR code
+// only takes space and folds away.
 function renderConnect() {
   el.phones.textContent = phones ? t('editor.phones', { n: phones }) : t('editor.waiting');
   el.phones.classList.toggle('waiting', !phones);
-  el['show-qr'].hidden = !phones;
+  el['show-qr'].hidden = !devices.length;
   el['show-qr'].textContent = t(showQrAnyway ? 'editor.hideQr' : 'editor.showQr');
-  el['connect-body'].hidden = phones > 0 && !showQrAnyway;
+  el['connect-body'].hidden = devices.length > 0 && !showQrAnyway;
+  renderDevices();
+}
+
+function lastSeen(device) {
+  if (device.online) return t('editor.deviceOnline');
+  if (!device.last_seen) return '';
+  const when = new Date(device.last_seen * 1000).toLocaleString(currentLanguage(), {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  return t('editor.deviceSeen', { when });
+}
+
+function renderDevices() {
+  if (renaming) return; // do not take the field away from under the user's hands
+  el['device-list'].replaceChildren(...devices.map((device) => {
+    const li = node('li', device.online ? 'online' : '');
+    li.dataset.device = device.id;
+    const name = node('button', 'device-name', device.name);
+    name.type = 'button';
+    name.title = t('editor.renameDevice');
+    name.addEventListener('click', () => startRename(device, name));
+    const remove = node('button', 'quiet danger remove', '✕');
+    remove.type = 'button';
+    remove.title = t('editor.removeDevice');
+    remove.setAttribute('aria-label', t('editor.removeDevice'));
+    remove.addEventListener('click', report(() => removeDevice(device)));
+    li.append(node('span', 'dot'), name, remove, node('span', 'seen', lastSeen(device)));
+    return li;
+  }));
+}
+
+function startRename(device, nameButton) {
+  renaming = device.id;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 40;
+  input.value = device.name;
+  let done = false;
+  const finish = report(async (keep) => {
+    if (done) return;
+    done = true;
+    renaming = null;
+    const name = input.value.trim();
+    if (keep && name && name !== device.name) {
+      devices = (await api(`/api/devices/${device.id}`, { method: 'PUT', body: { name } })).devices;
+    }
+    renderDevices();
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  nameButton.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function removeDevice(device) {
+  if (!window.confirm(t('editor.confirmRemoveDevice', { name: device.name }))) return;
+  devices = (await api(`/api/devices/${device.id}`, { method: 'DELETE' })).devices;
+  renderConnect();
+}
+
+async function copyLink() {
+  const link = links[Number(el.address.value)] || links[0];
+  if (!link) return;
+  await navigator.clipboard.writeText(link.url);
+  el['copy-link'].textContent = t('editor.copied');
+  setTimeout(() => { el['copy-link'].textContent = t('editor.copyLink'); }, 2000);
 }
 
 function renderStatus(status) {
@@ -623,7 +753,10 @@ function renderStatus(status) {
   el.fake.hidden = !status.fake_input;
   el.version.textContent = `Game Remote ${status.version}`;
   phones = status.phones;
+  devices = status.devices;
   renderConnect();
+  // The code inside the QR link was used or grew old: draw the new one.
+  if (status.pairing !== pairing) loadLinks().catch(() => {});
 
   el.recent.replaceChildren(...status.recent.slice(0, 6).map((press) => {
     const what = node('span', '', `${press.panel} · ${press.button}`);
@@ -695,6 +828,9 @@ el.language.addEventListener('change', report(async () => {
   const saved = await api('/api/settings', { method: 'PUT', body: { language: el.language.value } });
   useLanguage(saved.language);
 }));
+el['window-choose'].addEventListener('click', report(chooseWindow));
+el['window-remove'].addEventListener('click', () => setWindow(null));
+el['copy-link'].addEventListener('click', report(copyLink));
 el.rotate.addEventListener('click', () => { wide = !wide; renderPreview(); });
 el.address.addEventListener('change', showQr);
 el['show-qr'].addEventListener('click', () => { showQrAnyway = !showQrAnyway; renderConnect(); });

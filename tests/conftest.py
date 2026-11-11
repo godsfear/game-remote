@@ -10,7 +10,14 @@ from game_remote.state import build_state
 def state(tmp_path):
     """A complete app state with fake input and a demo panel in a temp folder."""
     settings = Settings(data_dir=tmp_path, editor_port=8730, remote_port=8731, open_browser=False)
-    return build_state(settings, fake_input=True, tap_ms=1)
+    state = build_state(settings, fake_input=True, tap_ms=1)
+    yield state
+    state.devices.close()
+
+
+def phone_key(state, name="Test phone") -> str:
+    """Registers a device without the QR code and returns its key."""
+    return state.devices.add(name)[1]
 
 
 def wait_for(condition, timeout: float = 5.0):

@@ -71,6 +71,11 @@ function killServer() {
 }
 
 const status = async () => (await fetch(`${editor}/api/status`)).json();
+// The link inside the QR code, pointed at this machine. Its code works once.
+const pairLink = async () => {
+  const { links } = await (await fetch(`${editor}/api/links`)).json();
+  return `${remote}/#pair=${links[0].url.split('#pair=')[1]}`;
+};
 const held = async () => JSON.stringify((await status()).held_keys);
 const shot = (page, name, options = {}) => (
   shots ? page.screenshot({ path: path.join(shots, `${name}.png`), ...options }) : null
@@ -125,7 +130,6 @@ async function main() {
   remote = `http://127.0.0.1:${ports.remote}`;
   if (shots) fs.mkdirSync(shots, { recursive: true });
   await startServer(ports);
-  const key = fs.readFileSync(path.join(dataDir, 'access.key'), 'utf8').trim();
 
   const browser = await chromium.launch();
   const errors = [];
@@ -138,15 +142,18 @@ async function main() {
     hasTouch: true,
     isMobile: true,
     deviceScaleFactor: 2,
+    userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
   };
 
   // ---- phone: connect -------------------------------------------------------
   const phone = await browser.newContext({ ...phoneOptions, locale: 'ru-RU' });
   const page = await phone.newPage();
   watch(page, 'phone');
-  await page.goto(`${remote}/#k=${key}`);
+  const firstLink = await pairLink();
+  await page.goto(firstLink);
   await page.waitForSelector('#status.online');
-  ok('the key is taken out of the address bar', !page.url().includes(key));
+  ok('the code is taken out of the address bar', !page.url().includes('pair'));
+  ok('the phone is in the list under its model name', (await status()).devices.map((d) => d.name).join() === 'Pixel 7');
   ok('six demo buttons are drawn', (await page.locator('.btn').count()) === 6);
   ok('interface follows the browser language', (await page.locator('#status-text').textContent()) === 'На связи');
   ok('demo panel follows the system language', (await page.locator('#panel-name').textContent()) === 'Демо');
@@ -245,13 +252,62 @@ async function main() {
   await desk.goto(editor);
   desk.on('dialog', (dialog) => dialog.accept());
   ok('PC page shows the connected phone', await until(async () => (await desk.locator('#phones').textContent()).includes('1')));
-  ok('the QR code folds away once a phone is connected', await desk.locator('#qr').isHidden());
+  ok('PC page lists the phone as connected', await until(async () => (
+    (await desk.locator('#device-list li.online .device-name').allTextContents()).join() === 'Pixel 7'
+  )));
+  ok('the QR code folds away once a phone is paired', await desk.locator('#qr').isHidden());
   await desk.click('#show-qr');
   ok('the QR code is drawn', await until(() => desk.evaluate(() => document.getElementById('qr').naturalWidth > 0)));
   ok('the address list fits its card', await desk.evaluate(() => (
     document.getElementById('address').getBoundingClientRect().right
     <= document.getElementById('connect').getBoundingClientRect().right
   )));
+
+  // ---- devices: a second one, a used code, rename, remove ---------------------
+  await desk.locator('#device-list .device-name').click();
+  await desk.keyboard.type('Мой телефон');
+  await sleep(1700); // a status refresh must not take the field away
+  ok('the name field survives a refresh of the page data', (await desk.locator('#device-list input').count()) === 1);
+  await desk.keyboard.press('Enter');
+  ok('a device can be renamed', await until(async () => (await status()).devices[0].name === 'Мой телефон'));
+  await page.locator('.btn[data-button="map"]').tap();
+  ok('the phone keeps working after the rename', await until(async () => (await status()).recent[0].phone === 'Мой телефон'));
+
+  const qrBefore = await desk.locator('#qr').getAttribute('src');
+  const secondLink = await pairLink();
+  ok('a used code is replaced by a new one', secondLink !== firstLink);
+  const tabletContext = await browser.newContext({
+    viewport: { width: 800, height: 1100 }, hasTouch: true, isMobile: true, locale: 'ru-RU',
+  });
+  const tablet = await tabletContext.newPage();
+  watch(tablet, 'tablet');
+  await tablet.goto(secondLink);
+  await tablet.waitForSelector('#status.online');
+  ok('a second device pairs with the next code', await until(async () => (await desk.locator('#device-list li.online').count()) === 2));
+  ok('the QR code on the PC is redrawn after pairing', await until(async () => (
+    (await desk.locator('#qr').getAttribute('src')) !== qrBefore
+  )));
+  await shot(desk, 'pc-devices', { fullPage: true });
+
+  const lateContext = await browser.newContext({ ...phoneOptions, locale: 'ru-RU' });
+  const late = await lateContext.newPage();
+  await late.goto(secondLink);
+  await late.waitForSelector('#message:not([hidden])');
+  ok('a code that was used pairs nobody else', (await late.locator('#message').textContent()).includes('уже использован'));
+  ok('a refused device is not in the list', (await status()).devices.length === 2);
+  await shot(late, 'phone-used-code');
+  await lateContext.close();
+
+  await desk.locator('#device-list li', { hasText: 'Браузер' }).locator('.remove').click();
+  ok('a removed device leaves the list', await until(async () => (await status()).devices.length === 1));
+  ok('a removed device is told to scan again', await until(async () => (
+    (await tablet.locator('#message').textContent()).includes('отключили')
+  )));
+  ok('a removed device shows no buttons', (await tablet.locator('.btn').count()) === 0);
+  await tablet.reload();
+  await tablet.waitForSelector('#message:not([hidden])');
+  ok('a removed device does not come back after a reload', (await status()).devices.length === 1);
+  await tabletContext.close();
   await desk.click('#show-qr');
   ok('PC page shows the broken panel', await until(async () => (await desk.locator('#panel-errors li').count()) === 1));
   ok('PC page lists recent presses', (await desk.locator('#recent li').count()) > 1);
@@ -296,6 +352,14 @@ async function main() {
   await desk.selectOption('#manual-key', 'F5');
   await saved();
   ok('a shortcut can be chosen by hand', (await stored('game')).buttons[1].keys === 'ControlLeft+ShiftLeft+F5');
+
+  await desk.click('#window-choose');
+  ok('open windows are offered for the game', await until(async () => (await desk.locator('#window-list button').count()) === 2));
+  await shot(desk, 'pc-window-choice', { fullPage: true });
+  await desk.locator('#window-list button[data-exe="X4.exe"]').click();
+  await saved();
+  ok('the chosen window is saved with the game', (await stored('game')).window === 'X4.exe');
+  ok('the game card names the program', (await desk.locator('#window-name').textContent()) === 'X4.exe');
   await shot(desk, 'pc-editor', { fullPage: true });
 
   // The phone got all of it without a reload.
@@ -370,10 +434,15 @@ async function main() {
   // ---- wrong or missing key -------------------------------------------------
   const stranger = await browser.newContext({ ...phoneOptions, locale: 'en-US' });
   const wrong = await stranger.newPage();
-  await wrong.goto(`${remote}/#k=not-the-key`);
+  await wrong.goto(`${remote}/#pair=not-the-code`);
   await wrong.waitForSelector('#message:not([hidden])');
-  ok('a wrong key asks to scan again', (await wrong.locator('#message').textContent()).includes('Scan the QR code'));
-  ok('a wrong key shows no buttons', (await wrong.locator('.btn').count()) === 0);
+  ok('a wrong code asks to scan again', (await wrong.locator('#message').textContent()).includes('Scan the code'));
+  ok('a wrong code shows no buttons', (await wrong.locator('.btn').count()) === 0);
+  await wrong.evaluate(() => localStorage.setItem('gameRemote.deviceKey', 'made-up-key'));
+  await wrong.reload();
+  await wrong.waitForSelector('#message:not([hidden])');
+  ok('an unknown key is refused', (await wrong.locator('#message').textContent()).includes('disconnected'));
+  ok('nobody was added to the list', (await status()).devices.length === 1);
   const bare = await stranger.newPage();
   await bare.goto(remote);
   await bare.waitForSelector('#message:not([hidden])');
@@ -418,7 +487,7 @@ async function main() {
       if (message.type === 'down') reply({ type: 'ack', id: message.id, ok: false, reason: 'elevated' });
     });
   });
-  await mock.goto(`${remote}/#k=${key}`);
+  await mock.goto(remote);
   await mock.waitForSelector('#status.online');
   await mock.locator('.btn[data-button="a"]').tap();
   await mock.waitForSelector('#toast:not([hidden])');

@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import sqlite3
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
-from game_remote.access import load_or_create_key
+from game_remote.access import PairingCodes, remove_legacy_key
 from game_remote.config import Settings
+from game_remote.devices import DeviceStore
 from game_remote.hub import RemoteHub
 from game_remote.input import InputBackend, InputController, RecordingBackend
 from game_remote.input.backend import default_backend
 from game_remote.input.controller import DEFAULT_TAP_MS
-from game_remote.input.windows import ForegroundInfo, foreground_info
+from game_remote.input.windows import ForegroundInfo, OpenWindow, foreground_info, open_windows
 from game_remote.panels import PanelStore
 from game_remote.user_settings import UserSettings, load_user_settings
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -24,14 +31,37 @@ class AppState:
     controller: InputController
     store: PanelStore
     hub: RemoteHub
-    access_key: str
+    devices: DeviceStore
+    pairing: PairingCodes
     user: UserSettings
+    # Programs with an open window, for binding a panel to a game.
+    windows: Callable[[], list[OpenWindow]] = open_windows
     # Set by the running program: stops both servers. None while nothing is running.
     stop: Callable[[], None] | None = None
 
     @property
     def fake_input(self) -> bool:
         return isinstance(self.backend, RecordingBackend)
+
+
+def open_devices(path: Path) -> DeviceStore:
+    """Opens the list of paired devices. A file that SQLite cannot read is put
+    aside, so the program still starts; the phones then pair again."""
+    try:
+        return DeviceStore(path)
+    except sqlite3.DatabaseError:
+        broken = path.with_name(path.name + ".broken")
+        log.exception("Could not read %s; it is kept as %s", path, broken.name)
+        os.replace(path, broken)
+        return DeviceStore(path)
+
+
+def _sample_windows() -> list[OpenWindow]:
+    """What the window list shows in test mode, where no real window is involved."""
+    return [
+        OpenWindow(exe_name="notepad.exe", title="Untitled - Notepad", elevated=False),
+        OpenWindow(exe_name="X4.exe", title="X4", elevated=False),
+    ]
 
 
 def _foreground() -> ForegroundInfo | None:
@@ -47,10 +77,14 @@ def build_state(
     store = PanelStore(settings.panels_dir, settings.trash_dir)
     store.ensure_demo()
     store.load()
-    access_key = load_or_create_key(settings.data_dir)
+    if remove_legacy_key(settings.data_dir):
+        log.info("Removed the shared key of the first prototype; phones pair again by QR code")
+    devices = open_devices(settings.db_path)
+    pairing = PairingCodes()
     # With fake input nothing reaches a window, so the focus checks do not apply.
     foreground = (lambda: None) if fake_input else _foreground
-    hub = RemoteHub(controller, store, access_key, foreground=foreground)
+    hub = RemoteHub(controller, store, devices, pairing, foreground=foreground)
     user = load_user_settings(settings.user_settings_path)
     hub.language = user.forced_language
-    return AppState(settings, backend, controller, store, hub, access_key, user)
+    windows = _sample_windows if fake_input else open_windows
+    return AppState(settings, backend, controller, store, hub, devices, pairing, user, windows)

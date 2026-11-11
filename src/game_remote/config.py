@@ -67,10 +67,10 @@ class Settings:
     def editor_url(self) -> str:
         return f"http://{self.editor_host}:{self.editor_port}/"
 
-    def remote_url(self, host: str, key: str) -> str:
-        """Link for the phone. The key sits in the fragment, which browsers never send
-        to a server or put in a Referer header; the page moves it to its own storage."""
-        return f"http://{host}:{self.remote_port}/#k={key}"
+    def remote_url(self, host: str, code: str) -> str:
+        """Link for the phone. The pairing code sits in the fragment, which browsers
+        never send to a server or put in a Referer header."""
+        return f"http://{host}:{self.remote_port}/#pair={code}"
 
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.log_dir, self.panels_dir):

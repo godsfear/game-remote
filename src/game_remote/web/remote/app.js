@@ -1,11 +1,13 @@
 import { applyTexts, setLanguage, t } from '/shared/i18n.js';
 import { columnsFor, renderGrid } from '/shared/panel-view.js';
 
-const KEY_STORE = 'gameRemote.key';
+const KEY_STORE = 'gameRemote.deviceKey';
+const OLD_KEY_STORE = 'gameRemote.key'; // the shared key of the first prototype
 const PANEL_STORE = 'gameRemote.panel';
 const PING_EVERY_MS = 1000;
 const PONG_TIMEOUT_MS = 3000;
 const CLOSE_BAD_KEY = 4401;
+const CLOSE_BAD_CODE = 4403;
 
 const el = {
   name: document.getElementById('panel-name'),
@@ -24,7 +26,11 @@ const store = {
   remove(name) { try { localStorage.removeItem(name); } catch { /* private mode */ } },
 };
 
-let key = takeKeyFromLink() || store.get(KEY_STORE);
+// The QR link carries a one-time code. It buys this device a key of its own,
+// which stays in the page's storage and opens every later visit.
+let pairCode = takeCodeFromLink();
+let key = store.get(KEY_STORE);
+store.remove(OLD_KEY_STORE);
 let ws = null;
 let online = false;
 let panels = [];
@@ -38,15 +44,23 @@ const pressed = new Map();
 // message id -> button node, to mark the button when the PC rejects a press
 const waiting = new Map();
 
-// The QR link carries the key after "#". Keep it in this page's storage and
-// take it out of the address bar, so it is not shared with a copied link.
-function takeKeyFromLink() {
-  const match = /(?:^#|&)k=([^&]+)/.exec(location.hash);
-  if (!match) return null;
-  const value = decodeURIComponent(match[1]);
-  store.set(KEY_STORE, value);
-  history.replaceState(null, '', location.pathname + location.search);
-  return value;
+// The code comes after "#", so it never reaches a server log. Take it out of
+// the address bar too: a copied link must not carry it.
+function takeCodeFromLink() {
+  const match = /(?:^#|&)pair=([^&]+)/.exec(location.hash);
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// The name this device gets in the list on the PC; it can be changed there.
+function deviceName() {
+  const agent = navigator.userAgent || '';
+  const model = /Android [^;)]+; ([^;)]+?)(?: Build\/[^)]*)?\)/.exec(agent)?.[1]?.trim();
+  if (model && model.length > 1) return model; // new Chrome says "K" for every model
+  if (/iPad/.test(agent)) return 'iPad';
+  if (/iPhone/.test(agent)) return 'iPhone';
+  if (/Android/.test(agent)) return t(/Mobile/.test(agent) ? 'device.phone' : 'device.tablet');
+  return t('device.other');
 }
 
 let statusState = 'offline';
@@ -83,7 +97,7 @@ function send(message) {
 // ---- connection ------------------------------------------------------------
 
 function connect() {
-  if (!key) {
+  if (!key && !pairCode) {
     setStatus('offline');
     showMessage(t('remote.scan'));
     return;
@@ -94,20 +108,30 @@ function connect() {
   ws = socket;
   socket.onopen = () => {
     lastPong = performance.now();
-    socket.send(JSON.stringify({ type: 'hello', key }));
+    const first = key ? { type: 'hello', key } : { type: 'pair', code: pairCode, name: deviceName() };
+    socket.send(JSON.stringify(first));
   };
   socket.onmessage = (event) => { if (socket === ws) onMessage(JSON.parse(event.data)); };
   socket.onclose = (event) => {
     if (socket !== ws) return;
     ws = null;
     dropAllPresses();
-    if (event.code === CLOSE_BAD_KEY) {
-      key = null;
-      store.remove(KEY_STORE);
+    if (event.code === CLOSE_BAD_KEY || event.code === CLOSE_BAD_CODE) {
+      const badKey = event.code === CLOSE_BAD_KEY;
+      if (badKey) {
+        key = null;
+        store.remove(KEY_STORE);
+        if (pairCode) { // removed on the PC, but the link brought a fresh code
+          connect();
+          return;
+        }
+      } else {
+        pairCode = null;
+      }
       panels = [];
       render();
       setStatus('offline');
-      showMessage(t('remote.badKey'));
+      showMessage(t(badKey ? 'remote.badKey' : 'remote.badCode'));
       return;
     }
     setStatus('offline');
@@ -124,18 +148,25 @@ function useLanguage(code) {
 }
 
 function onMessage(message) {
-  if (message.type === 'settings') {
+  if (message.type === 'paired') {
+    key = message.key;
+    store.set(KEY_STORE, key);
+    pairCode = null;
+  } else if (message.type === 'settings') {
     useLanguage(message.language);
     render();
   } else if (message.type === 'welcome' || message.type === 'panels') {
     if (message.type === 'welcome') useLanguage(message.language);
     if (message.type === 'welcome') {
+      pairCode = null; // the key still works, so the code stays unused
       retryMs = 500;
       setStatus('online');
     }
     dropAllPresses();
     panels = message.panels || [];
     render();
+  } else if (message.type === 'released') {
+    dropAllPresses(); // the game lost focus and the PC let go of the held keys
   } else if (message.type === 'pong') {
     lastPong = performance.now();
   } else if (message.type === 'ack') {

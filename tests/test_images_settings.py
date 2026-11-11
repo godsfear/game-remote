@@ -5,6 +5,7 @@ import os
 import time
 
 import pytest
+from conftest import phone_key
 from fastapi.testclient import TestClient
 
 from game_remote.panels import MAX_IMAGE_BYTES, image_extension
@@ -120,7 +121,12 @@ def test_replaced_pictures_are_removed_later_and_own_files_never(client, state):
 
 def test_editor_serves_only_pictures_from_the_panel_folder(client, state):
     (state.settings.panels_dir / "demo" / "notes.txt").write_text("x")
-    for name in ("panel.json", "notes.txt", "..%2F..%2Faccess.key", "%2e%2e%2faccess.key"):
+    for name in (
+        "panel.json",
+        "notes.txt",
+        "..%2F..%2Fgame-remote.sqlite3",
+        "%2e%2e%2fgame-remote.sqlite3",
+    ):
         assert client.get(f"/panel-files/demo/{name}").status_code == 404
 
 
@@ -132,7 +138,7 @@ def test_language_is_auto_by_default(client, state):
 def test_language_choice_is_saved_and_sent_to_phones(client, state):
     phone = TestClient(create_remote_app(state), client=PHONE)
     with phone.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "key": state.access_key})
+        ws.send_json({"type": "hello", "key": phone_key(state)})
         assert ws.receive_json()["language"] is None
 
         reply = client.put("/api/settings", json={"language": "en"}, headers=ORIGIN)
@@ -145,7 +151,7 @@ def test_language_choice_is_saved_and_sent_to_phones(client, state):
     client.put("/api/settings", json={"language": "ru"}, headers=ORIGIN)
     assert load_user_settings(state.settings.user_settings_path).language == "ru"
     with phone.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "key": state.access_key})
+        ws.send_json({"type": "hello", "key": phone_key(state)})
         assert ws.receive_json()["language"] == "ru"
 
 
