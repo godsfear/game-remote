@@ -28,6 +28,7 @@
       <section id="connect">
         <h2 data-i18n="editor.connect"></h2>
         <p id="phones" class="waiting" role="status"></p>
+        <ul id="device-list"></ul>
         <button id="show-qr" type="button" class="quiet" data-i18n="editor.showQr" hidden></button>
         <div id="connect-body">
           <div id="qr-box"><img id="qr" alt="QR" hidden><p id="no-address" data-i18n="editor.noAddress" hidden></p></div>
@@ -35,6 +36,7 @@
           <label id="address-row"><span data-i18n="editor.address"></span>
             <select id="address"></select>
           </label>
+          <button id="copy-link" type="button" class="quiet" data-i18n="editor.copyLink"></button>
           <details>
             <summary data-i18n="editor.trouble"></summary>
             <ul>
@@ -68,6 +70,15 @@
             <button id="cover-choose" type="button" data-i18n="editor.chooseImage"></button>
             <button id="cover-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
           </div>
+        </div>
+        <div class="field"><span data-i18n="editor.window"></span>
+          <div class="image-row">
+            <output id="window-name"></output>
+            <button id="window-choose" type="button" data-i18n="editor.chooseWindow"></button>
+            <button id="window-remove" type="button" class="quiet" data-i18n="editor.removeWindow"></button>
+          </div>
+          <ul id="window-list" hidden></ul>
+          <p class="hint" id="window-hint"></p>
         </div>
         <button id="delete-game" type="button" class="quiet danger" data-i18n="editor.deleteGame"></button>
       </section>

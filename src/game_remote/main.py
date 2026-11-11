@@ -79,7 +79,11 @@ async def serve(state: AppState, tray: bool = False) -> None:
     if tray:
         quit_program = lambda: loop.call_soon_threadsafe(stop)  # noqa: E731
         icon = start_tray(open_editor, quit_program, state.user.forced_language)
-    helpers = [asyncio.create_task(watch_panels(state)), asyncio.create_task(when_ready())]
+    helpers = [
+        asyncio.create_task(watch_panels(state)),
+        asyncio.create_task(state.hub.watch_focus()),
+        asyncio.create_task(when_ready()),
+    ]
     try:
         # If one server stops (for example its port vanished), stop the other too.
         tasks = [asyncio.create_task(editor.serve()), asyncio.create_task(remote.serve())]

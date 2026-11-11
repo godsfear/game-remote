@@ -27,21 +27,36 @@ class NewPanel(BaseModel):
     name: str = Field(min_length=1, max_length=60)
 
 
+class DeviceName(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
 def allowed_hosts(port: int) -> set[str]:
     return {f"127.0.0.1:{port}", f"localhost:{port}"}
 
 
 def phone_links(state: AppState) -> list[dict]:
-    """Links for the QR code: one per network address, then the computer name."""
+    """Links for the QR code: one per network address, then the computer name.
+    All of them carry the pairing code that is valid right now."""
+    code = state.pairing.current()
     links = [
-        {"kind": "ip", "host": addr, "url": state.settings.remote_url(addr, state.access_key)}
+        {"kind": "ip", "host": addr, "url": state.settings.remote_url(addr, code)}
         for addr in lan_addresses()
     ]
     name = local_name()
     if name:
-        url = state.settings.remote_url(name, state.access_key)
-        links.append({"kind": "name", "host": name, "url": url})
+        links.append({"kind": "name", "host": name, "url": state.settings.remote_url(name, code)})
     return links
+
+
+def device_list(state: AppState) -> list[dict]:
+    online = state.hub.online_devices()
+    return [{**d.as_dict(), "online": d.id in online} for d in state.devices.all()]
+
+
+def _pairing_serial(state: AppState) -> int:
+    state.pairing.current()
+    return state.pairing.serial
 
 
 def create_editor_app(state: AppState) -> FastAPI:
@@ -74,6 +89,9 @@ def create_editor_app(state: AppState) -> FastAPI:
         return {
             "version": __version__,
             "phones": len(hub.connections),
+            "devices": device_list(state),
+            # Changes when the code inside the QR link does: the page redraws the QR code.
+            "pairing": _pairing_serial(state),
             "recent": list(hub.recent),
             "panels": [
                 {"id": p.id, "name": p.panel.name, "buttons": len(p.panel.buttons)}
@@ -88,7 +106,9 @@ def create_editor_app(state: AppState) -> FastAPI:
 
     @app.get("/api/links")
     async def links() -> dict:
-        return {"links": [{"kind": x["kind"], "host": x["host"]} for x in phone_links(state)]}
+        # Only pages of this editor can read the reply (see local_only above),
+        # so it may carry the links with the pairing code.
+        return {"links": phone_links(state), "pairing": state.pairing.serial}
 
     @app.get("/api/qr/{index}.svg")
     async def qr(index: int) -> Response:
@@ -101,6 +121,37 @@ def create_editor_app(state: AppState) -> FastAPI:
         return Response(
             out.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"}
         )
+
+    # -- paired devices ----------------------------------------------------------
+
+    @app.put("/api/devices/{device_id}")
+    async def rename_device(device_id: str, body: DeviceName) -> dict:
+        if state.devices.get(device_id) is None:
+            raise HTTPException(status_code=404)
+        device = state.devices.rename(device_id, body.name)
+        if device is None:
+            raise HTTPException(status_code=422)
+        state.hub.rename_device(device)
+        return {"devices": device_list(state)}
+
+    @app.delete("/api/devices/{device_id}")
+    async def remove_device(device_id: str) -> dict:
+        """Forgets the device: its key stops working and its connection closes."""
+        if not state.devices.remove(device_id):
+            raise HTTPException(status_code=404)
+        await state.hub.drop_device(device_id)
+        return {"devices": device_list(state)}
+
+    @app.get("/api/windows")
+    async def windows() -> dict:
+        """Programs with an open window, to bind a panel to a game."""
+        found = state.windows()
+        return {
+            "supported": state.fake_input or sys.platform == "win32",
+            "windows": [
+                {"exe": w.exe_name, "title": w.title, "elevated": w.elevated is True} for w in found
+            ],
+        }
 
     # -- panels ------------------------------------------------------------------
 

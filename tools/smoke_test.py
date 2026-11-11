@@ -122,8 +122,11 @@ class Program:
     def phone(self):
         return connect(f"ws://127.0.0.1:{self.remote_port}/ws", proxy=None, open_timeout=10)
 
-    def key(self) -> str:
-        return (self.data_dir / "access.key").read_text(encoding="ascii").strip()
+    def pairing_code(self) -> str:
+        """The one-time code from the link that the QR code on the PC page holds."""
+        links = self.get(self.editor + "/api/links")["links"]
+        assert links, "the PC page has no link for the QR code"
+        return links[0]["url"].split("#pair=")[1]
 
 
 def wait_for(condition, what: str, timeout: float = 6.0) -> None:
@@ -164,9 +167,28 @@ def check(program: Program, say=print) -> None:
             raise AssertionError("a wrong key was accepted")
     say("a wrong key is refused")
 
+    code = program.pairing_code()
     with program.phone() as ws:
-        welcome = exchange(ws, {"type": "hello", "key": program.key()})
+        paired = exchange(ws, {"type": "pair", "code": code, "name": "Smoke phone"})
+        assert paired["type"] == "paired" and len(paired["key"]) >= 40, paired
+        key = paired["key"]
+        welcome = json.loads(ws.recv(timeout=5))
         assert welcome["type"] == "welcome" and welcome["panels"][0]["id"] == "demo", welcome
+    with program.phone() as ws:
+        ws.send(json.dumps({"type": "pair", "code": code, "name": "Second phone"}))
+        try:
+            ws.recv(timeout=5)
+        except Exception as closed:  # noqa: BLE001 - any close is the expected result
+            assert "4403" in str(closed), closed
+        else:
+            raise AssertionError("a used pairing code was accepted")
+    devices = program.status()["devices"]
+    assert [d["name"] for d in devices] == ["Smoke phone"], devices
+    say("the QR code pairs one phone and then stops working")
+
+    with program.phone() as ws:
+        welcome = exchange(ws, {"type": "hello", "key": key})
+        assert welcome["type"] == "welcome", welcome
         assert exchange(ws, {"type": "ping", "t": 1}) == {"type": "pong", "t": 1}
 
         if not program.real_input:
@@ -184,7 +206,7 @@ def check(program: Program, say=print) -> None:
     say("held key is released when the phone disconnects")
 
     with program.phone() as ws:
-        exchange(ws, {"type": "hello", "key": program.key()})
+        exchange(ws, {"type": "hello", "key": key})
         panel_file = program.data_dir / "panels" / "demo" / "panel.json"
         panel = json.loads(panel_file.read_text(encoding="utf-8"))
         panel["name"] = "Smoke test"

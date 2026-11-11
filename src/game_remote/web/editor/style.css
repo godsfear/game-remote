@@ -47,6 +47,24 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 #phones { margin: 0 0 12px; font-weight: 600; color: var(--ok); }
 #phones.waiting { color: var(--muted); font-weight: 400; }
+#device-list { display: grid; gap: 6px; }
+#device-list:not(:empty) { margin-bottom: 12px; }
+#device-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; padding: 6px 6px 6px 10px; background: var(--raised); border-radius: 9px; }
+#device-list .dot { width: 9px; height: 9px; border-radius: 50%; background: #565c6b; }
+#device-list li.online .dot { background: var(--ok); }
+#device-list .device-name { border-color: transparent; background: none; padding: 3px 4px; text-align: left; font-size: 15px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#device-list .device-name:hover { border-color: var(--line); }
+#device-list input { font-size: 15px; padding: 3px 6px; }
+#device-list .seen { grid-column: 2; padding-left: 4px; font-size: 12px; color: var(--muted); }
+#device-list .remove { grid-row: 1 / span 2; grid-column: 3; padding: 4px 9px; }
+#copy-link { margin-top: 10px; }
+#window-name { flex: 1; min-width: 120px; padding: 9px 12px; border-radius: 9px; background: #171a22; border: 1px solid var(--line); overflow-wrap: anywhere; }
+#window-name.any { color: var(--muted); font-size: 14px; }
+#window-list { display: grid; gap: 6px; margin-top: 4px; }
+#window-list button { width: 100%; display: grid; gap: 2px; text-align: left; background: var(--raised); font-size: 15px; }
+#window-list small { color: var(--muted); font-size: 12px; }
+#window-list .warn, #window-hint.warn { color: #ffcf7a; }
+#window-list li.empty { font-size: 14px; color: var(--muted); }
 #qr-box { display: grid; place-items: center; min-height: 200px; background: #fff; border-radius: 12px; padding: 6px; }
 #qr { width: 100%; max-width: 260px; height: auto; display: block; }
 #no-address { color: #333; padding: 16px; text-align: center; }

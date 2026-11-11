@@ -1,5 +1,6 @@
 from xml.etree import ElementTree
 
+from conftest import phone_key
 from fastapi.testclient import TestClient
 
 from game_remote.config import Settings
@@ -51,27 +52,30 @@ def test_editor_status_describes_panels_and_phones(state, tmp_path):
     assert status["panels_dir"] == str(tmp_path / "panels")
 
 
-def test_editor_never_puts_the_key_in_json(state):
+def test_editor_never_shows_device_keys(state):
+    key = phone_key(state)
     client = editor_client(state)
     for path in ("/api/status", "/api/links", "/api/health"):
-        assert state.access_key not in client.get(path).text
+        assert key not in client.get(path).text
+    # The pairing code is only in the links, which the QR code needs anyway.
+    assert state.pairing.current() not in client.get("/api/status").text
 
 
 def test_qr_code_holds_the_phone_link(state, monkeypatch):
     monkeypatch.setattr("game_remote.server.editor.lan_addresses", lambda: ["192.168.1.10"])
     monkeypatch.setattr("game_remote.server.editor.local_name", lambda: "gamer-pc.local")
+    code = state.pairing.current()
     links = phone_links(state)
-    assert [x["url"] for x in links] == [
-        f"http://192.168.1.10:8731/#k={state.access_key}",
-        f"http://gamer-pc.local:8731/#k={state.access_key}",
+    assert links == [
+        {"kind": "ip", "host": "192.168.1.10", "url": f"http://192.168.1.10:8731/#pair={code}"},
+        {
+            "kind": "name",
+            "host": "gamer-pc.local",
+            "url": f"http://gamer-pc.local:8731/#pair={code}",
+        },
     ]
     client = editor_client(state)
-    assert client.get("/api/links").json() == {
-        "links": [
-            {"kind": "ip", "host": "192.168.1.10"},
-            {"kind": "name", "host": "gamer-pc.local"},
-        ]
-    }
+    assert client.get("/api/links").json() == {"links": links, "pairing": 1}
     first = client.get("/api/qr/0.svg")
     assert first.status_code == 200
     assert first.headers["content-type"].startswith("image/svg+xml")
@@ -87,7 +91,7 @@ def test_qr_code_holds_the_phone_link(state, monkeypatch):
 def test_release_keys_from_the_editor(state):
     remote = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
     with remote.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "key": state.access_key})
+        ws.send_json({"type": "hello", "key": phone_key(state)})
         ws.receive_json()
         ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "forward"})
         ws.receive_json()
@@ -108,7 +112,6 @@ def test_remote_health_and_page(state):
     page = client.get("/")
     assert page.status_code == 200
     assert page.headers["cache-control"] == "no-cache"
-    assert state.access_key not in page.text
     assert client.get("/shared/i18n.js").status_code == 200
     assert client.get("/app.js").status_code == 200
 
@@ -126,7 +129,7 @@ def test_settings_paths(tmp_path):
     assert s.log_dir.is_dir() and s.panels_dir.is_dir()
     assert s.editor_url == "http://127.0.0.1:8730/"
     assert s.editor_host == "127.0.0.1"
-    assert s.remote_url("192.168.1.10", "abc") == "http://192.168.1.10:8731/#k=abc"
+    assert s.remote_url("192.168.1.10", "abc") == "http://192.168.1.10:8731/#pair=abc"
 
 
 def test_i18n_dictionaries_have_the_same_keys():

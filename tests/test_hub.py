@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from conftest import wait_for
+from conftest import phone_key, wait_for
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -24,7 +24,7 @@ def connect(state, address=PHONE):
 
 
 def hello(ws, state):
-    ws.send_json({"type": "hello", "key": state.access_key})
+    ws.send_json({"type": "hello", "key": phone_key(state)})
     welcome = ws.receive_json()
     assert welcome["type"] == "welcome"
     return welcome
@@ -66,7 +66,7 @@ def test_nothing_works_without_the_key(state, first):
 
 def test_connection_from_outside_the_home_network_is_refused(state):
     with pytest.raises(WebSocketDisconnect), connect(state, ("8.8.8.8", 4000)) as ws:
-        ws.send_json({"type": "hello", "key": state.access_key})
+        ws.send_json({"type": "hello", "key": phone_key(state)})
         ws.receive_json()
     assert client(state, ("8.8.8.8", 4000)).get("/").status_code == 403
     assert client(state).get("/").status_code == 200
@@ -207,6 +207,30 @@ def test_press_is_rejected_when_another_window_has_focus(state, tmp_path):
     assert state.hub.recent[-1]["reason"] == "not_focused"
 
 
+def test_held_keys_are_released_when_another_window_becomes_active(state):
+    def window(pid):
+        return lambda: ForegroundInfo(pid=pid, exe_path=r"C:\x.exe", title="", elevated=False)
+
+    state.hub.foreground = window(10)
+    with connect(state) as ws:
+        hello(ws, state)
+        press(ws, "down", "forward")
+        press(ws, "down", "run")
+        assert state.hub.check_focus() == []  # still the same window
+        state.hub.foreground = lambda: ForegroundInfo(None, None, "", None)
+        assert state.hub.check_focus() == []  # between two windows: not known yet
+        assert state.controller.held_keys == {"KeyW", "ShiftLeft"}
+
+        state.hub.foreground = window(20)
+        assert len(state.hub.check_focus()) == 1
+        assert state.controller.held_keys == set()
+        assert state.hub.check_focus() == []
+        assert press(ws, "up", "forward")["ok"]  # the finger lifts later: nothing breaks
+        assert press(ws, "down", "forward")["ok"]  # and a new hold works in the new window
+        assert state.controller.held_keys == {"KeyW"}
+        assert state.hub.check_focus() == []
+
+
 def test_press_is_rejected_when_the_game_runs_as_administrator(state, monkeypatch):
     monkeypatch.setattr("game_remote.hub.input_blocked_by_elevation", lambda info: info.elevated)
     state.hub.foreground = foreground("Undecember.exe", elevated=True)
@@ -239,5 +263,5 @@ def test_panel_images_are_served_only_from_the_panel(state, tmp_path):
     http = client(state)
     assert http.get("/panel-files/demo/map.png").content == b"\x89PNG"
     assert http.get("/panel-files/demo/panel.json").status_code == 404
-    assert http.get("/panel-files/demo/..%2F..%2Faccess.key").status_code == 404
+    assert http.get("/panel-files/demo/..%2F..%2Fgame-remote.sqlite3").status_code == 404
     assert http.get("/panel-files/nope/map.png").status_code == 404

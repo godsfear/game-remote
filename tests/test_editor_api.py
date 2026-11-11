@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from conftest import phone_key
 from fastapi.testclient import TestClient
 
 from game_remote.panels import PanelStore
@@ -152,7 +153,7 @@ def test_the_phone_has_no_editor_api(state):
 def test_an_edit_reaches_the_phone_and_releases_its_keys(client, state):
     phone = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
     with phone.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "key": state.access_key})
+        ws.send_json({"type": "hello", "key": phone_key(state)})
         ws.receive_json()
         ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "forward"})
         assert ws.receive_json()["ok"]
