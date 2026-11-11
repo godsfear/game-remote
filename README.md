@@ -24,7 +24,7 @@ Game Remote превращает телефон или планшет в пул�
 
 ### Как начать
 
-1. Скачайте `GameRemote.exe` со страницы [Releases](https://github.com/godsfear/game-remote/releases) и запустите его. Файл не подписан, поэтому SmartScreen предупредит: нажмите «Подробнее», затем «Выполнить в любом случае».
+1. Скачайте `GameRemote.exe` со страницы [Releases](https://github.com/godsfear/game-remote/releases) и запустите его. Файл не подписан, поэтому Windows предупредит. В окне SmartScreen нажмите «Подробнее», затем «Выполнить в любом случае»; в окне «Не удается проверить издателя» нажмите «Запустить».
 2. На вопрос брандмауэра Windows разрешите доступ в частных сетях.
 3. В браузере откроется страница с QR-кодом. Наведите на него камеру телефона, который подключён к той же Wi-Fi.
 4. На телефоне откроется готовая панель Star Citizen. Чтобы собрать свою, нажмите «Добавить игру».
@@ -59,7 +59,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 
 ### Getting started
 
-1. Download `GameRemote.exe` from [Releases](https://github.com/godsfear/game-remote/releases) and run it. The file is not signed, so SmartScreen warns: choose "More info", then "Run anyway".
+1. Download `GameRemote.exe` from [Releases](https://github.com/godsfear/game-remote/releases) and run it. The file is not signed, so Windows warns. In the SmartScreen window choose "More info", then "Run anyway"; in the "The publisher could not be verified" window choose "Run".
 2. When Windows Firewall asks, allow access on private networks.
 3. A page with a QR code opens in the browser. Point the camera of a phone on the same Wi-Fi at it.
 4. The phone shows a ready-made Star Citizen panel. To build your own, press "Add a game".
