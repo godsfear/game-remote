@@ -65,8 +65,9 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
         assert loaded.image_path(name).read_bytes()[:2] == b"\xff\xd8", name
     public = loaded.public()
     assert public["shape"] == "square"
-    assert public["background"] == f"/panel-files/{SAMPLE_ID}/background.jpg"
-    assert public["buttons"][0]["image"] == f"/panel-files/{SAMPLE_ID}/flight-ready.jpg"
+    assert public["background"].split("?")[0] == f"/panel-files/{SAMPLE_ID}/background.jpg"
+    image = public["buttons"][0]["image"]
+    assert image.split("?")[0] == f"/panel-files/{SAMPLE_ID}/flight-ready.jpg"
     assert sorted(p.name for p in (tmp_path / "panels").iterdir()) == [SAMPLE_ID]
 
 
@@ -269,7 +270,7 @@ def test_only_images_used_by_a_button_are_served(tmp_path):
     assert loaded.image_path("map.png") == folder / "map.png"
     assert loaded.image_path("other.png") is None
     assert loaded.image_path("panel.json") is None
-    assert loaded.public()["buttons"][0]["image"] == "/panel-files/x4/map.png"
+    assert loaded.public()["buttons"][0]["image"].split("?")[0] == "/panel-files/x4/map.png"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows asks the system, not the environment")

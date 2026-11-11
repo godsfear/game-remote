@@ -38,6 +38,7 @@ const store = {
 
 let panels = []; // as the PC stores them, plus buttons that have no keys yet
 let panelErrors = {};
+let versions = {}; // panel id -> file name -> the time of the picture on the PC
 let revision = 0; // the last state of the panel files this page knows
 let currentId = store.get(PANEL_STORE);
 let selectedId = null; // the button being edited
@@ -117,6 +118,7 @@ function takePanels(data) {
   const unsaved = new Map(panels.filter((panel) => dirty.has(panel.id)).map((panel) => [panel.id, panel]));
   panels = data.panels.map((panel) => unsaved.get(panel.id) || panel);
   panelErrors = data.errors;
+  versions = data.versions || {};
   revision = data.revision;
   if (!currentPanel()) currentId = panels[0]?.id || null;
   if ((selectedButton()?.screen || 0) !== currentScreen()) selectedId = null;
@@ -721,7 +723,12 @@ function buildColors() {
 
 // ---- pictures --------------------------------------------------------------
 
-const filePath = (panel, name) => `/panel-files/${panel.id}/${encodeURIComponent(name)}`;
+// The address carries the time of the file, as the PC told it: a picture that
+// was replaced by one of the same name is fetched again.
+const filePath = (panel, name) => {
+  const version = versions[panel.id]?.[name];
+  return `/panel-files/${panel.id}/${encodeURIComponent(name)}${version ? `?v=${version}` : ''}`;
+};
 const imageUrl = (panel, name) => `url("${filePath(panel, name)}")`;
 
 function showThumb(thumb, removeButton, panel, name) {

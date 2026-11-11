@@ -14,13 +14,14 @@ catalogue says its language and holds no file it does not use.
 from __future__ import annotations
 
 import io
+import os
 import re
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
-from game_remote.panels import MAX_SET_BYTES, PANEL_FILE, PanelStore, read_set
+from game_remote.panels import MAX_SET_BYTES, PANEL_FILE, PanelSet, PanelStore, read_set
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = (ROOT / "sets", ROOT / "src" / "game_remote" / "samples")
@@ -34,16 +35,19 @@ INDEX = "sets.md"
 INDEX_HEAD = """\
 Готовые наборы кнопок для Game Remote. Скачайте zip нужной игры ниже и нажмите \
 «Импортировать набор» в редакторе на ПК. Как прислать свой набор: \
-[sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md).
+[sets/README.md](https://github.com/{repository}/blob/main/sets/README.md).
 
 Ready-made sets of buttons for Game Remote. Download the zip of your game below and \
 press "Import a set" in the editor on the PC. How to send your own set: \
-[sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md).
+[sets/README.md](https://github.com/{repository}/blob/main/sets/README.md).
 """
+# GitHub Actions names the repository the workflow runs in.
+REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "godsfear/game-remote")
 
 
-def build(folder: Path) -> bytes:
-    """The zip of the set in ``folder``. A ValueError says what is wrong with it."""
+def build(folder: Path) -> tuple[bytes, PanelSet]:
+    """The zip of the set in ``folder``, and the set as it was read. A ValueError
+    says what is wrong with it."""
     if not NAME.match(folder.name) or len(folder.name) > 40:
         raise ValueError("name the folder with small Latin letters, digits and -")
     panel_set = read_set(folder)
@@ -70,7 +74,7 @@ def build(folder: Path) -> bytes:
         store = PanelStore(Path(temporary))
         for language in (panel_set.panel.language, *panel_set.translations):
             store.import_set(data, language)
-    return data
+    return data, panel_set
 
 
 def catalogue(sources: tuple[Path, ...] = SOURCES) -> list[Path]:
@@ -94,7 +98,7 @@ def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
             if folder.name in seen:
                 raise ValueError("two sets have this name")
             seen.add(folder.name)
-            data = build(folder)
+            data, panel_set = build(folder)
         except (OSError, ValueError) as error:
             failed = True
             print(f"FAIL {folder.name}: {error}")
@@ -102,11 +106,10 @@ def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
         print(f"ok   {folder.name}: {len(data)} bytes")
         if target is not None:
             (target / f"{folder.name}.zip").write_bytes(data)
-            panel_set = read_set(folder)
             languages = ", ".join([panel_set.panel.language, *panel_set.translations])
             lines.append(f"- **{panel_set.panel.name}** — `{folder.name}.zip` — {languages}")
     if target is not None:
-        text = INDEX_HEAD + "\n" + "\n".join(lines) + "\n"
+        text = INDEX_HEAD.format(repository=REPOSITORY) + "\n" + "\n".join(lines) + "\n"
         (target / INDEX).write_text(text, encoding="utf-8")
     return 1 if failed else 0
 

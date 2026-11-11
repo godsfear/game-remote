@@ -167,8 +167,26 @@ class LoadedPanel:
     folder: Path
     panel: Panel
 
+    def _version(self, name: str) -> int | None:
+        """A number that changes when the file of the picture does: its time."""
+        try:
+            return (self.folder / name).stat().st_mtime_ns // 1_000_000
+        except OSError:
+            return None
+
     def _url(self, name: str | None) -> str | None:
-        return f"/panel-files/{self.id}/{name}" if name else None
+        """Address of a picture of this panel. It carries the time of the file,
+        so a page that is open fetches a picture again when it changed, also
+        when the new file has the name of the old one."""
+        if not name:
+            return None
+        version = self._version(name)
+        return f"/panel-files/{self.id}/{name}" + (f"?v={version}" if version else "")
+
+    def versions(self) -> dict[str, int | None]:
+        """The time of every picture of the panel, by file name. The editor
+        puts it into its addresses, like ``_url`` does for the phone."""
+        return {name: self._version(name) for name in sorted(self.panel.images())}
 
     def full(self) -> dict:
         """Everything, for the editor on the PC."""
@@ -190,7 +208,7 @@ class LoadedPanel:
                     "label": b.label,
                     "type": b.type,
                     "color": b.color,
-                    "image": f"/panel-files/{self.id}/{b.image}" if b.image else None,
+                    "image": self._url(b.image),
                     "screen": b.screen,
                 }
                 for b in self.panel.buttons
@@ -582,7 +600,8 @@ class PanelStore:
         self.load()
         return True
 
-    def _to_trash(self, panel_id: str) -> None:
+    def _to_trash(self, panel_id: str) -> Path:
+        """Moves the folder of the panel to the trash folder; returns where it is now."""
         self.trash.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         target, number = self.trash / f"{panel_id}-{stamp}", 1
@@ -590,6 +609,7 @@ class PanelStore:
             number += 1
             target = self.trash / f"{panel_id}-{stamp}-{number}"
         shutil.move(str(self.root / panel_id), str(target))
+        return target
 
     def install_sample(self) -> bool:
         """Put the ready-made panel next to the user's own, so the phone has
@@ -622,9 +642,15 @@ class PanelStore:
             for name in sorted(panel.images()):
                 shutil.copyfile(panel_set.folder / name, draft / name)
             (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
-            if replace:
-                self._to_trash(panel_id)
-            _replace(draft, self.root / panel_id)
+            trashed = self._to_trash(panel_id) if replace else None
+            try:
+                _replace(draft, self.root / panel_id)
+            except OSError:
+                # The old panel comes back: an import that failed changes nothing.
+                if trashed is not None:
+                    with contextlib.suppress(OSError):
+                        shutil.move(str(trashed), str(self.root / panel_id))
+                raise
         except OSError:
             shutil.rmtree(draft, ignore_errors=True)
             raise

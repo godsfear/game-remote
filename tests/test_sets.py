@@ -50,7 +50,7 @@ def test_a_set_is_packed_into_a_zip_the_program_imports(tmp_path):
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         # The notes of the author stay in the catalogue; a user gets the set alone.
         assert archive.namelist() == ["cover.png", "panel.json", "panel.ru.json"]
-    assert build_sets.build(folder) == data  # the same set gives the same zip
+    assert build_sets.build(folder)[0] == data  # the same set gives the same zip
     # The list of the sets is the text of the page they are downloaded from.
     listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
     assert listed.splitlines()[-1] == "- **Elite** — `elite.zip` — en, ru"

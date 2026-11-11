@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import random
 import re
 import struct
@@ -429,4 +430,55 @@ def test_an_import_asks_before_it_touches_a_game_of_the_same_name(client, state)
         reply = client.post(f"/api/sets?same_name={answer}", content=zipped(fresh), headers=ZIP)
         assert reply.status_code == 201
         client.delete(f"/api/panels/{reply.json()['id']}", headers=ORIGIN)
-    assert client.post("/api/sets?same_name=maybe", content=zipped(files)).status_code in (403, 422)
+    wrong = client.post("/api/sets?same_name=maybe", content=zipped(files), headers=ZIP)
+    assert wrong.status_code == 422
+
+
+def test_a_replaced_picture_of_the_same_name_gets_a_new_address(client, state):
+    """A page that is open keeps a picture it has for an address. So the address
+    changes with the file: here the set that replaces a game brings another
+    gear.png."""
+    files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    client.post("/api/sets", content=zipped(files), headers=ZIP)
+    phone = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
+
+    def addresses():
+        public = next(p for p in state.store.public() if p["id"] == "elite")
+        editor = client.get("/api/panels").json()["versions"]["elite"]
+        return public["buttons"][0]["image"], editor["gear.png"]
+
+    before = addresses()
+    assert before[0].startswith("/panel-files/elite/gear.png?v=")
+    # Nothing changed: the address stays, and the picture is not fetched again.
+    client.put("/api/panels/elite", json=ELITE | {"columns": 4, "language": None}, headers=ORIGIN)
+    assert addresses() == before
+
+    folder = state.settings.panels_dir / "elite"
+    old = (folder / "gear.png").stat().st_mtime
+    os.utime(folder / "gear.png", (old - 60, old - 60))  # the old file is a minute older
+    before = addresses()
+    newer = {**files, "gear.png": PNG + b"\x01"}
+    client.post("/api/sets?same_name=replace", content=zipped(newer), headers=ZIP)
+    after = addresses()
+    assert after[0] != before[0] and after[1] != before[1]
+    assert phone.get(after[0]).content == PNG + b"\x01"
+
+
+def test_a_replacement_that_fails_leaves_the_game_where_it_was(client, state, monkeypatch):
+    files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    client.post("/api/sets", content=zipped(files), headers=ZIP)
+    before = panel_file(state, "elite").read_text(encoding="utf-8")
+
+    def refused(source, target):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    changed = {**files, "panel.json": ELITE | {"columns": 5}}
+    reply = client.post("/api/sets?same_name=replace", content=zipped(changed), headers=ZIP)
+    assert reply.status_code == 500
+    monkeypatch.undo()
+    assert panel_file(state, "elite").read_text(encoding="utf-8") == before
+    assert sorted(p.name for p in state.settings.panels_dir.iterdir()) == ["demo", "elite"]
+    assert not list(state.settings.trash_dir.iterdir())
+    panels = client.get("/api/panels").json()
+    assert [p["id"] for p in panels["panels"]] == ["demo", "elite"] and panels["errors"] == {}

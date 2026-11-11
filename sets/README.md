@@ -8,7 +8,7 @@
 
 ### Как взять набор
 
-Готовые файлы наборов лежат на странице [Sets / Наборы](https://github.com/godsfear/game-remote/releases/tag/sets). Скачайте zip нужной игры и нажмите «Импортировать набор» в редакторе Game Remote на ПК. Файлы на этой странице обновляются сами, когда в каталоге появляется или меняется набор.
+Готовые файлы наборов лежат на странице [Sets / Наборы](https://github.com/godsfear/game-remote/releases/tag/panel-sets). Скачайте zip нужной игры и нажмите «Импортировать набор» в редакторе Game Remote на ПК. Файлы на этой странице обновляются сами, когда в каталоге появляется или меняется набор.
 
 Набор нажимает клавиши, которые стоят в игре по умолчанию. Если вы их переназначили, поправьте кнопки в редакторе после импорта.
 
@@ -61,7 +61,7 @@ Sets of buttons for games are collected here. A set is a folder with the descrip
 
 ### How to get a set
 
-The files of the sets are on the page [Sets / Наборы](https://github.com/godsfear/game-remote/releases/tag/sets). Download the zip of your game and press "Import a set" in the editor of Game Remote on the PC. The files on that page are updated by themselves when a set is added to the catalogue or changed.
+The files of the sets are on the page [Sets / Наборы](https://github.com/godsfear/game-remote/releases/tag/panel-sets). Download the zip of your game and press "Import a set" in the editor of Game Remote on the PC. The files on that page are updated by themselves when a set is added to the catalogue or changed.
 
 A set presses the keys the game has by default. If you changed them in the game, change the buttons in the editor after the import.
 

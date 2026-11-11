@@ -194,6 +194,8 @@ def create_editor_app(state: AppState) -> FastAPI:
         store = state.store
         return {
             "panels": [p.full() for p in store.panels.values()],
+            # Panel id -> file name -> the time of the picture, for its address.
+            "versions": {p.id: p.versions() for p in store.panels.values()},
             "errors": store.errors,
             "revision": store.revision,
         }

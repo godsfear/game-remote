@@ -93,8 +93,10 @@ def test_picture_and_cover_reach_the_phone(client, state):
     assert client.put("/api/panels/demo", json=panel, headers=ORIGIN).status_code == 200
 
     public = state.store.public()[0]
-    assert public["cover"] == f"/panel-files/demo/{cover}"
-    assert public["buttons"][0]["image"] == f"/panel-files/demo/{image}"
+    assert public["cover"].split("?")[0] == f"/panel-files/demo/{cover}"
+    assert public["buttons"][0]["image"].split("?")[0] == f"/panel-files/demo/{image}"
+    # The address the phone is given opens the picture.
+    assert phone.get(public["cover"]).status_code == 200
     assert phone.get(public["cover"]).content == JPEG
     assert phone.get(public["buttons"][0]["image"]).content == PNG
     on_disk = json.loads((state.settings.panels_dir / "demo" / "panel.json").read_text("utf-8"))
@@ -118,7 +120,7 @@ def test_background_reaches_the_phone_and_is_kept_as_a_used_picture(client, stat
 
     public = state.store.public()[0]
     assert public["shape"] == "square"
-    assert public["background"] == f"/panel-files/demo/{background}"
+    assert public["background"].split("?")[0] == f"/panel-files/demo/{background}"
     assert phone.get(public["background"]).content == WEBP
     # Old, but in use: the next save does not take it for a leftover.
     client.put("/api/panels/demo", json=panel, headers=ORIGIN)

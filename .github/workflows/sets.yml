@@ -1,8 +1,9 @@
 name: Sets
 
-# Packs the sets of the catalogue and puts their zips into the release "sets".
+# Packs the sets of the catalogue and puts their zips into the release "panel-sets".
 # The page of that release is where players download a set; its address does
 # not change. GameRemote.exe is not built here: a new set needs no new program.
+# The tag is not called "sets": git could not tell it from the folder of that name.
 #
 # Runs when the catalogue or the code that checks it changes on main, or by
 # hand from the Actions page.
@@ -30,6 +31,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      RELEASE: panel-sets
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,19 +40,20 @@ jobs:
       - run: pip install -e .
       - name: Check every set and pack it
         run: python tools/build_sets.py dist/sets
-      - name: Put the zips into the release "sets"
+      - name: Put the zips into the release
         run: |
           # Never "Latest": that mark belongs to the release of the program.
-          if gh release view sets > /dev/null 2>&1; then
-            gh release edit sets --title "Sets / Наборы" --notes-file dist/sets/sets.md --latest=false
+          if gh release view "$RELEASE" > /dev/null 2>&1; then
+            gh release edit "$RELEASE" --title "Sets / Наборы" --notes-file dist/sets/sets.md \
+              --latest=false
           else
-            gh release create sets --title "Sets / Наборы" --notes-file dist/sets/sets.md \
+            gh release create "$RELEASE" --title "Sets / Наборы" --notes-file dist/sets/sets.md \
               --latest=false --target "$GITHUB_SHA"
           fi
-          gh release upload sets dist/sets/*.zip --clobber
+          gh release upload "$RELEASE" dist/sets/*.zip --clobber
           # A set that left the catalogue leaves the page too.
-          for name in $(gh release view sets --json assets --jq '.assets[].name'); do
+          for name in $(gh release view "$RELEASE" --json assets --jq '.assets[].name'); do
             if [ ! -f "dist/sets/$name" ]; then
-              gh release delete-asset sets "$name" --yes
+              gh release delete-asset "$RELEASE" "$name" --yes
             fi
           done
