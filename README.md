@@ -19,7 +19,7 @@ Game Remote превращает телефон или планшет в пул�
 - **Своя панель у каждой игры:** подписи, цвета, картинки, фон, сочетания клавиш, порядок кнопок.
 - **Кнопки «нажать» и «держать»,** можно нажимать несколько сразу.
 - **Экраны:** кнопки одной игры раскладываются по нескольким экранам, на телефоне их переключают вкладки.
-- **Наборы:** игру можно сохранить в один файл и поделиться ею, чужой набор — импортировать. У набора могут быть подписи на нескольких языках. Наборы сообщества собираются в папке [sets](sets/README.md): там же написано, как добавить свой.
+- **Наборы:** игру можно сохранить в один файл и поделиться ею, чужой набор — импортировать. У набора могут быть подписи на нескольких языках. Готовые наборы сообщества можно [скачать](https://github.com/godsfear/game-remote/releases/tag/sets); как добавить свой, написано в папке [sets](sets/README.md).
 - **Привязка к окну игры:** нажатие не попадёт в чат или браузер.
 - **Только ваши устройства:** одноразовый код в QR, свой ключ у каждого телефона, отключение любого из них на ПК.
 - Интерфейс на русском и английском.
@@ -56,7 +56,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 - **A panel per game:** labels, colours, pictures, a background, keyboard shortcuts, button order.
 - **Tap and hold buttons,** several at a time.
 - **Screens:** the buttons of one game can be grouped into several screens; tabs on the phone switch between them.
-- **Sets:** a game can be saved into one file and shared, and someone else's set imported. A set can carry its labels in several languages. Sets from the community are collected in the folder [sets](sets/README.md), which also says how to add yours.
+- **Sets:** a game can be saved into one file and shared, and someone else's set imported. A set can carry its labels in several languages. Ready-made sets from the community can be [downloaded](https://github.com/godsfear/game-remote/releases/tag/sets); the folder [sets](sets/README.md) says how to add yours.
 - **Bound to the game's window:** a press never lands in a chat or a browser.
 - **Your devices only:** a one-time code in the QR link, a key per phone, and any of them can be disconnected on the PC.
 - English and Russian interface.
@@ -94,6 +94,8 @@ node tests/browser/check.js    # both pages in a real browser; needs `npm instal
 node tools/make_screenshots.js # the pictures in this file
 python tools/build_sets.py     # checks the sets of the catalogue; with a folder, also packs them into zips
 ```
+
+The `Sets` workflow packs the sets of the catalogue and puts the zips into the release `sets` whenever the catalogue changes on `main`; the program is not rebuilt for it.
 
 A release is built by the `Release` workflow: push a tag such as `v0.1.0` or start it by hand on the Actions page. It makes a draft release with `GameRemote.exe`; publish the draft on the Releases page.
 

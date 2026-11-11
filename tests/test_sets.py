@@ -51,6 +51,9 @@ def test_a_set_is_packed_into_a_zip_the_program_imports(tmp_path):
         # The notes of the author stay in the catalogue; a user gets the set alone.
         assert archive.namelist() == ["cover.png", "panel.json", "panel.ru.json"]
     assert build_sets.build(folder) == data  # the same set gives the same zip
+    # The list of the sets is the text of the page they are downloaded from.
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1] == "- **Elite** — `elite.zip` — en, ru"
 
     store = PanelStore(tmp_path / "panels")
     store.root.mkdir()
@@ -79,7 +82,8 @@ def test_a_set_with_a_mistake_fails_the_check(tmp_path, capsys, name, panel, fil
     said = capsys.readouterr().out
     assert f"FAIL {name}: " in said and problem in said, said
     # The other sets are still checked and packed; the wrong one is not offered.
-    assert [path.name for path in (tmp_path / "out").iterdir()] == ["good.zip"]
+    assert sorted(path.name for path in (tmp_path / "out").iterdir()) == ["good.zip", "sets.md"]
+    assert "good.zip" in (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
 
 
 def test_two_sets_cannot_share_a_name(tmp_path, capsys):

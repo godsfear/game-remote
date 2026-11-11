@@ -2,6 +2,7 @@
 
     python tools/build_sets.py              # check only
     python tools/build_sets.py dist/sets    # check, then write <name>.zip of every set
+                                            # and sets.md, the list of them
 
 The catalogue is the folder ``sets`` and the set that ships inside the
 program. A set passes when the program itself imports its zip in every
@@ -27,6 +28,18 @@ SOURCES = (ROOT / "sets", ROOT / "src" / "game_remote" / "samples")
 NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 # Notes of the author: where the pictures come from, what the keys assume.
 NOTES = "README.md"
+# The list of the sets, written next to the zips: the text of the page they are
+# downloaded from.
+INDEX = "sets.md"
+INDEX_HEAD = """\
+Готовые наборы кнопок для Game Remote. Скачайте zip нужной игры ниже и нажмите \
+«Импортировать набор» в редакторе на ПК. Как прислать свой набор: \
+[sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md).
+
+Ready-made sets of buttons for Game Remote. Download the zip of your game below and \
+press "Import a set" in the editor on the PC. How to send your own set: \
+[sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md).
+"""
 
 
 def build(folder: Path) -> bytes:
@@ -71,8 +84,11 @@ def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
         print(__doc__)
         return 2
     target = Path(argv[0]) if argv else None
+    if target is not None:
+        target.mkdir(parents=True, exist_ok=True)
     failed = False
     seen: set[str] = set()
+    lines = []
     for folder in catalogue(sources):
         try:
             if folder.name in seen:
@@ -85,8 +101,13 @@ def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
             continue
         print(f"ok   {folder.name}: {len(data)} bytes")
         if target is not None:
-            target.mkdir(parents=True, exist_ok=True)
             (target / f"{folder.name}.zip").write_bytes(data)
+            panel_set = read_set(folder)
+            languages = ", ".join([panel_set.panel.language, *panel_set.translations])
+            lines.append(f"- **{panel_set.panel.name}** — `{folder.name}.zip` — {languages}")
+    if target is not None:
+        text = INDEX_HEAD + "\n" + "\n".join(lines) + "\n"
+        (target / INDEX).write_text(text, encoding="utf-8")
     return 1 if failed else 0
 
 
