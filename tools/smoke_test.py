@@ -26,6 +26,16 @@ from pathlib import Path
 from websockets.sync.client import connect
 
 START_TIMEOUT = 60.0  # a single-file exe unpacks itself first, and antivirus scans it
+SAMPLE = "star-citizen"  # the ready-made panel that the program installs on the first run
+# The test's own panel: one key to tap, and Shift to hold, which does nothing on its own.
+OWN = "smoke"
+OWN_PANEL = {
+    "name": "Smoke",
+    "buttons": [
+        {"id": "map", "label": "Map", "keys": "KeyM"},
+        {"id": "run", "label": "Run", "keys": "ShiftLeft", "type": "hold"},
+    ],
+}
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -53,6 +63,9 @@ class Program:
         self.editor = f"http://127.0.0.1:{self.editor_port}"
         self.remote = f"http://127.0.0.1:{self.remote_port}"
         self.process: subprocess.Popen | None = None
+        self.own_panel = self.data_dir / "panels" / OWN / "panel.json"
+        self.own_panel.parent.mkdir(parents=True)
+        self.own_panel.write_text(json.dumps(OWN_PANEL), encoding="utf-8")
 
     # -- process ---------------------------------------------------------------
 
@@ -104,8 +117,11 @@ class Program:
             return json.load(response)
 
     def get_text(self, url: str) -> str:
+        return self.get_bytes(url).decode("utf-8")
+
+    def get_bytes(self, url: str) -> bytes:
         with _opener.open(url, timeout=3) as response:
-            return response.read().decode("utf-8")
+            return response.read()
 
     def post(self, path: str, origin: str | None = None) -> tuple[int, dict]:
         headers = {"Origin": origin} if origin else {}
@@ -145,9 +161,18 @@ def exchange(ws, message: dict) -> dict:
 def check(program: Program, say=print) -> None:
     """The checks themselves. Raises AssertionError with a readable reason."""
     status = program.status()
-    assert [p["id"] for p in status["panels"]] == ["demo"], status
+    assert [p["id"] for p in status["panels"]] == [OWN, SAMPLE], status
+    assert status["panel_errors"] == {}, status
     assert status["fake_input"] is (not program.real_input), status
-    say(f"started, version {status['version']}, demo panel is there")
+    sample = next(
+        p for p in program.get(program.editor + "/api/panels")["panels"] if p["id"] == SAMPLE
+    )
+    pictures = [button["image"] for button in sample["buttons"]] + [sample["background"]]
+    assert len(pictures) == 7 and all(pictures), sample
+    for name in pictures:
+        picture = program.get_bytes(f"{program.editor}/panel-files/{SAMPLE}/{name}")
+        assert picture[:2] == b"\xff\xd8", f"{name} is not a JPEG picture"
+    say(f"started, version {status['version']}, the ready-made panel is there with its pictures")
 
     for path in ("/", "/app.js", "/style.css", "/shared/i18n.js"):
         assert program.get_text(program.editor + path), f"editor{path} is empty"
@@ -173,7 +198,8 @@ def check(program: Program, say=print) -> None:
         assert paired["type"] == "paired" and len(paired["key"]) >= 40, paired
         key = paired["key"]
         welcome = json.loads(ws.recv(timeout=5))
-        assert welcome["type"] == "welcome" and welcome["panels"][0]["id"] == "demo", welcome
+        assert welcome["type"] == "welcome", welcome
+        assert [p["id"] for p in welcome["panels"]] == [OWN, SAMPLE], welcome
     with program.phone() as ws:
         ws.send(json.dumps({"type": "pair", "code": code, "name": "Second phone"}))
         try:
@@ -192,11 +218,14 @@ def check(program: Program, say=print) -> None:
         assert exchange(ws, {"type": "ping", "t": 1}) == {"type": "pong", "t": 1}
 
         if not program.real_input:
-            ack = exchange(ws, {"type": "down", "id": 1, "panel": "demo", "button": "map"})
+            ack = exchange(ws, {"type": "down", "id": 1, "panel": OWN, "button": "map"})
             assert ack == {"type": "ack", "id": 1, "ok": True}, ack
-            exchange(ws, {"type": "up", "id": 2, "panel": "demo", "button": "map"})
+            exchange(ws, {"type": "up", "id": 2, "panel": OWN, "button": "map"})
+            ack = exchange(ws, {"type": "down", "id": 4, "panel": SAMPLE, "button": "atc"})
+            assert ack == {"type": "ack", "id": 4, "ok": True}, ack
+            exchange(ws, {"type": "up", "id": 5, "panel": SAMPLE, "button": "atc"})
         # "run" holds Shift, which does nothing on its own.
-        ack = exchange(ws, {"type": "down", "id": 3, "panel": "demo", "button": "run"})
+        ack = exchange(ws, {"type": "down", "id": 3, "panel": OWN, "button": "run"})
         assert ack == {"type": "ack", "id": 3, "ok": True}, ack
         # The tapped key is released after some milliseconds; Shift stays down.
         wait_for(lambda: program.status()["held_keys"] == ["ShiftLeft"], "only Shift is held")
@@ -207,10 +236,9 @@ def check(program: Program, say=print) -> None:
 
     with program.phone() as ws:
         exchange(ws, {"type": "hello", "key": key})
-        panel_file = program.data_dir / "panels" / "demo" / "panel.json"
-        panel = json.loads(panel_file.read_text(encoding="utf-8"))
-        panel["name"] = "Smoke test"
-        panel_file.write_text(json.dumps(panel), encoding="utf-8")
+        program.own_panel.write_text(
+            json.dumps(OWN_PANEL | {"name": "Smoke test"}), encoding="utf-8"
+        )
         pushed = json.loads(ws.recv(timeout=10))
         assert pushed["type"] == "panels" and pushed["panels"][0]["name"] == "Smoke test", pushed
     say("an edited panel file reaches the phone")

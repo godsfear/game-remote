@@ -71,7 +71,7 @@ header {
   background: #3a3320; color: #ffe9a8; font-size: 14px; line-height: 1.35;
 }
 
-#grid { flex: 1; touch-action: none; }
+#grid { flex: 1; min-height: 0; touch-action: none; }
 body.offline #grid { opacity: 0.45; }
 
 #message { margin: auto; padding: 24px; max-width: 28em; text-align: center; font-size: 18px; line-height: 1.4; color: var(--muted); }

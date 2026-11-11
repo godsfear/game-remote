@@ -1,9 +1,10 @@
 import { applyTexts, language as currentLanguage, setLanguage, t } from '/shared/i18n.js';
-import { renderGrid } from '/shared/panel-view.js';
+import { renderGrid, showBackground } from '/shared/panel-view.js';
 
 const SAVE_DELAY_MS = 400;
 const PANEL_STORE = 'gameRemote.editor.panel';
 const IMAGE_MAX_SIDE = 512; // pictures are shrunk to this before upload
+const BACKGROUND_MAX_SIDE = 1920; // a background fills the whole phone screen
 const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
 const el = Object.fromEntries([
@@ -15,7 +16,8 @@ const el = Object.fromEntries([
   'delete-button', 'preview-card', 'rotate', 'phone', 'phone-name', 'preview', 'preview-empty',
   'recent', 'release', 'version', 'open-folder', 'quit', 'cover-thumb', 'cover-choose',
   'cover-remove', 'image-thumb', 'image-choose', 'image-remove', 'file', 'language',
-  'device-list', 'copy-link', 'window-name', 'window-choose', 'window-remove', 'window-list',
+  'device-list', 'copy-link', 'background-thumb', 'background-choose', 'background-remove',
+  'shape', 'window-name', 'window-choose', 'window-remove', 'window-list',
   'window-hint',
 ].map((id) => [id, document.getElementById(id)]));
 
@@ -125,6 +127,8 @@ function forFile(panel) {
     columns: panel.columns,
     window: panel.window || null,
     cover: panel.cover || null,
+    background: panel.background || null,
+    shape: panel.shape || 'fill',
     buttons: panel.buttons.filter((button) => button.keys).map((button) => ({
       id: button.id,
       label: button.label,
@@ -242,6 +246,10 @@ function fillGameForm() {
   el['columns-less'].disabled = panel.columns <= 1;
   el['columns-more'].disabled = panel.columns >= 8;
   showThumb(el['cover-thumb'], el['cover-remove'], panel, panel.cover);
+  showThumb(el['background-thumb'], el['background-remove'], panel, panel.background);
+  for (const choice of el.shape.children) {
+    choice.setAttribute('aria-pressed', String(choice.dataset.shape === (panel.shape || 'fill')));
+  }
   fillWindow(panel);
 }
 
@@ -560,14 +568,14 @@ function showThumb(thumb, removeButton, panel, name) {
 
 // A photo from a camera is far bigger than a button on a phone screen, so the
 // page shrinks the picture and sends the small copy.
-async function shrink(file) {
+async function shrink(file, maxSide = IMAGE_MAX_SIDE) {
   let bitmap;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
     throw new Error(t('editor.imageError'));
   }
-  const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -579,7 +587,7 @@ async function shrink(file) {
   throw new Error(t('editor.imageError'));
 }
 
-let fileTarget = null; // 'cover' or the id of the button that gets the picture
+let fileTarget = null; // 'cover', 'background' or the id of the button that gets the picture
 
 function chooseFile(target) {
   fileTarget = target;
@@ -591,7 +599,7 @@ async function fileChosen() {
   const [file] = el.file.files;
   const panel = currentPanel();
   if (!file || !panel) return;
-  const blob = await shrink(file);
+  const blob = await shrink(file, fileTarget === 'background' ? BACKGROUND_MAX_SIDE : IMAGE_MAX_SIDE);
   const response = await fetch(`/api/panels/${panel.id}/images`, {
     method: 'POST',
     body: blob,
@@ -603,8 +611,8 @@ async function fileChosen() {
 }
 
 function setPicture(panel, target, name) {
-  if (target === 'cover') {
-    panel.cover = name;
+  if (target === 'cover' || target === 'background') {
+    panel[target] = name;
   } else {
     const button = panel.buttons.find((candidate) => candidate.id === target);
     if (!button) return;
@@ -628,8 +636,10 @@ function renderPreview() {
   if (!panel) return;
   el['phone-name'].textContent = panel.name || 'Game Remote';
   el.phone.classList.toggle('wide', wide);
+  showBackground(el.phone, panel.background ? filePath(panel, panel.background) : null);
   const shown = {
     columns: panel.columns,
+    shape: panel.shape,
     buttons: panel.buttons.map((button) => ({
       ...button,
       image: button.image ? filePath(panel, button.image) : null,
@@ -835,6 +845,16 @@ el['duplicate-button'].addEventListener('click', duplicateButton);
 el['delete-button'].addEventListener('click', deleteButton);
 el['cover-choose'].addEventListener('click', () => chooseFile('cover'));
 el['cover-remove'].addEventListener('click', () => setPicture(currentPanel(), 'cover', null));
+el['background-choose'].addEventListener('click', () => chooseFile('background'));
+el['background-remove'].addEventListener('click', () => setPicture(currentPanel(), 'background', null));
+for (const choice of el.shape.children) {
+  choice.addEventListener('click', () => {
+    currentPanel().shape = choice.dataset.shape;
+    fillGameForm();
+    renderPreview();
+    changed();
+  });
+}
 el['image-choose'].addEventListener('click', () => chooseFile(selectedId));
 el['image-remove'].addEventListener('click', () => setPicture(currentPanel(), selectedId, null));
 el.file.addEventListener('change', report(fileChosen));

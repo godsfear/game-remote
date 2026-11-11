@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +20,9 @@ class UserSettings(BaseModel):
 
     # "auto": every device uses the language of its own browser.
     language: Language = "auto"
+    # Ready-made panels that were already put into the panels folder. One the
+    # user deleted is not installed again.
+    samples: list[str] = Field(default_factory=list)
 
     @property
     def forced_language(self) -> str | None:

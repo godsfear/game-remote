@@ -19,7 +19,7 @@ from game_remote.input.keys import MODIFIERS, SCAN_CODES, is_modifier, key_label
 from game_remote.netinfo import lan_addresses, local_name
 from game_remote.panels import MAX_IMAGE_BYTES, ImageError, Panel, short_error
 from game_remote.state import AppState
-from game_remote.user_settings import UserSettings, save_user_settings
+from game_remote.user_settings import Language, save_user_settings
 from game_remote.web import web_dir
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,10 @@ BODY = Body(...)
 
 class NewPanel(BaseModel):
     name: str = Field(min_length=1, max_length=60)
+
+
+class LanguageChoice(BaseModel):
+    language: Language = "auto"
 
 
 class DeviceName(BaseModel):
@@ -224,14 +228,15 @@ def create_editor_app(state: AppState) -> FastAPI:
 
     @app.get("/api/settings")
     async def get_settings() -> dict:
-        return state.user.model_dump()
+        return {"language": state.user.language}
 
     @app.put("/api/settings")
-    async def put_settings(body: UserSettings) -> dict:
-        state.user = body
-        save_user_settings(settings.user_settings_path, body)
-        await state.hub.set_language(body.forced_language)
-        return body.model_dump()
+    async def put_settings(body: LanguageChoice) -> dict:
+        # Only the language is the page's to change; the rest of the file stays.
+        state.user = state.user.model_copy(update={"language": body.language})
+        save_user_settings(settings.user_settings_path, state.user)
+        await state.hub.set_language(state.user.forced_language)
+        return {"language": state.user.language}
 
     @app.get("/panel-files/{panel_id}/{name}")
     async def panel_file(panel_id: str, name: str) -> FileResponse:

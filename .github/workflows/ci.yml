@@ -43,7 +43,9 @@ jobs:
           node-version: "22"
       - run: pip install -e .
       - run: npm install --no-save playwright@1.63.0
-      - run: npx playwright install --with-deps chromium
+      # Only the browser itself. --with-deps also asks apt for extra fonts, and the
+      # whole job then hangs and fails whenever the Ubuntu mirrors do not answer.
+      - run: npx playwright install chromium
       - run: node tests/browser/check.js screenshots
       - uses: actions/upload-artifact@v4
         if: always()

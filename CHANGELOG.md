@@ -6,6 +6,8 @@
 
 - Один файл `GameRemote.exe`, Python ставить не нужно. На телефон ничего не ставится.
 - Редактор на ПК: игры и кнопки, запись сочетания с клавиатуры, цвета и картинки, обложки игр, порядок кнопок и число колонок, предпросмотр. Изменения сохраняются сами и сразу видны на телефоне.
+- Фон панели и квадратные кнопки: панель можно собрать из своих картинок.
+- Готовая панель Star Citizen с шестью кнопками при первом запуске.
 - Кнопки «нажать» и «держать», несколько пальцев одновременно.
 - Подключение по QR-коду с одноразовым кодом. У каждого устройства свой ключ; устройство можно переименовать и отключить на ПК.
 - Привязка панели к окну игры: нажатия не попадают в другие программы. Зажатые клавиши отпускаются при обрыве связи и при смене активного окна.
@@ -24,6 +26,8 @@ First release. A phone or tablet becomes a button panel for Windows games: build
 
 - A single `GameRemote.exe`, no Python needed. Nothing to install on the phone.
 - An editor on the PC: games and buttons, shortcuts recorded from the keyboard, colours and pictures, game covers, button order and column count, a live preview. Changes are saved by themselves and reach the phone at once.
+- A background picture and square buttons: a panel can be built from your own artwork.
+- A ready-made Star Citizen panel with six buttons on the first start.
 - Tap and hold buttons, several fingers at a time.
 - Pairing by a QR code with a one-time code. Every device has its own key and can be renamed or disconnected on the PC.
 - A panel can be bound to the game's window, so presses never land in another program. Held keys are released when the connection drops or another window becomes active.

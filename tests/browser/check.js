@@ -7,7 +7,7 @@
 // free ports. PYTHON chooses the interpreter (default: python).
 
 const { chromium } = require('playwright');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const net = require('net');
 const os = require('os');
@@ -50,12 +50,12 @@ function freePort() {
   });
 }
 
-async function startServer(ports) {
+async function startServer(ports, folder = dataDir) {
   const env = {
     ...process.env,
     LANG: 'ru_RU.UTF-8',
     LC_ALL: '',
-    GAME_REMOTE_DATA_DIR: dataDir,
+    GAME_REMOTE_DATA_DIR: folder,
     GAME_REMOTE_EDITOR_PORT: String(ports.editor),
     GAME_REMOTE_REMOTE_PORT: String(ports.remote),
   };
@@ -112,6 +112,133 @@ function png(width, height, [red, green, blue]) {
   ]);
 }
 
+// The plain panel the checks below work with, in place of the ready-made one.
+function seedDemo() {
+  const code = 'import json; from game_remote.panels import demo_panel; '
+    + 'print(json.dumps(demo_panel(russian=True).model_dump(exclude_none=True)))';
+  writePanel('demo', execFileSync(python, ['-c', code], { encoding: 'utf8' }));
+  fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ samples: ['star-citizen'] }));
+}
+
+// Where every button of the panel lies, and whether the pictures are there.
+const tiles = (page, grid) => page.evaluate((selector) => {
+  const box = (node) => {
+    const { left, top, right, bottom, width, height } = node.getBoundingClientRect();
+    return { left, top, right, bottom, width, height };
+  };
+  const area = document.querySelector(selector);
+  const buttons = [...area.querySelectorAll('.btn')];
+  return {
+    grid: box(area),
+    buttons: buttons.map(box),
+    pictures: buttons.map((node) => node.querySelector('img')?.naturalWidth || 0),
+  };
+}, grid);
+
+// Square, all of one size, inside the grid, and not on top of each other.
+function squaresFit({ grid, buttons }, least) {
+  const near = (a, b) => Math.abs(a - b) < 1;
+  const apart = (a, b) => a.right <= b.left + 1 || b.right <= a.left + 1
+    || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+  return buttons.every((b) => near(b.width, b.height) && near(b.width, buttons[0].width)
+      && b.width >= least
+      && b.left >= grid.left - 1 && b.right <= grid.right + 1
+      && b.top >= grid.top - 1 && b.bottom <= grid.bottom + 1)
+    && buttons.every((a, i) => buttons.every((b, j) => i === j || apart(a, b)));
+}
+
+// A new user's first start: the ready-made Star Citizen panel with its pictures.
+async function firstRun(browser, ports, phoneOptions, watch) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'game-remote-first-'));
+  await startServer(ports, folder);
+  try {
+    const phone = await browser.newContext({ ...phoneOptions, locale: 'ru-RU' });
+    const page = await phone.newPage();
+    watch(page, 'first phone');
+    await page.goto(await pairLink());
+    await page.waitForSelector('#status.online');
+    ok('first start shows the Star Citizen panel', (await page.locator('#panel-name').textContent()) === 'Star Citizen');
+    ok(
+      'it has the six buttons in the system language',
+      (await page.locator('.btn .label').allTextContents()).join() === 'Flight Ready,ATC,Шасси,Фары,VTOL,Карта'
+    );
+    ok('every button has its picture', await until(async () => (await tiles(page, '#grid')).pictures.join() === '512,512,512,512,512,512'));
+    const background = () => page.evaluate(async () => {
+      const url = getComputedStyle(document.body).backgroundImage.slice(5, -2);
+      const picture = new Image();
+      picture.src = url;
+      await picture.decode();
+      return `${new URL(url).pathname} ${picture.naturalWidth}`;
+    });
+    ok('the background picture is behind the panel', (await background()) === '/panel-files/star-citizen/background.jpg 941');
+    let layout = await tiles(page, '#grid');
+    ok('upright: square buttons in two columns fill the width', squaresFit(layout, 180)
+      && new Set(layout.buttons.map((b) => Math.round(b.left))).size === 2, JSON.stringify(layout.buttons[0]));
+    ok('the buttons stand in the middle of the screen', Math.abs(
+      (layout.buttons[0].top - layout.grid.top) - (layout.grid.bottom - layout.buttons[5].bottom)
+    ) < 4);
+    await shot(page, 'phone-star-citizen');
+
+    await page.locator('.btn[data-button="flight-ready"]').tap();
+    ok('Flight Ready presses right Alt + R', await until(async () => (await status()).recent[0]?.keys === 'Right Alt+R'), JSON.stringify((await status()).recent[0]));
+    await page.locator('.btn[data-button="atc"]').tap();
+    ok('ATC presses left Alt + N', await until(async () => (await status()).recent[0]?.keys === 'Alt+N'), JSON.stringify((await status()).recent[0]));
+    ok('no key stays down after the taps', await until(async () => (await held()) === '[]'));
+
+    await page.setViewportSize({ width: 915, height: 412 });
+    await page.waitForSelector('#grid.wide');
+    layout = await tiles(page, '#grid');
+    ok('on its side: two even rows of three', squaresFit(layout, 120)
+      && new Set(layout.buttons.map((b) => Math.round(b.top))).size === 2
+      && new Set(layout.buttons.map((b) => Math.round(b.left))).size === 3, JSON.stringify(layout.buttons[0]));
+    await shot(page, 'phone-star-citizen-wide');
+    await page.setViewportSize({ width: 412, height: 915 });
+
+    const pc = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ru-RU' });
+    const desk = await pc.newPage();
+    watch(desk, 'first editor');
+    await desk.goto(editor);
+    await desk.waitForSelector('#preview .btn');
+    ok('the editor opens the ready-made panel', (await desk.locator('#game-name').inputValue()) === 'Star Citizen');
+    layout = await tiles(desk, '#preview');
+    ok('the preview shows the same square buttons', squaresFit(layout, 60) && layout.pictures.every((side) => side === 512), JSON.stringify(layout.buttons[0]));
+    ok('the preview shows the background', await desk.evaluate(() => getComputedStyle(document.getElementById('phone')).backgroundImage.includes('background.jpg')));
+    ok('the editor shows the background and the shape', (await desk.locator('#background-thumb.set').count()) === 1
+      && (await desk.locator('#shape [data-shape="square"]').getAttribute('aria-pressed')) === 'true');
+    await shot(desk, 'editor-star-citizen');
+
+    const saved = () => desk.waitForFunction(() => document.getElementById('save-state').textContent === 'Сохранено');
+    await desk.locator('#shape [data-shape="fill"]').click();
+    await saved();
+    ok('"fill the screen" reaches the phone', await until(() => page.locator('#grid:not(.square)').count()));
+    layout = await tiles(page, '#grid');
+    ok('then the buttons take the whole grid', layout.buttons[5].bottom > layout.grid.bottom - 20
+      && layout.buttons[0].top < layout.grid.top + 20);
+    await desk.locator('#background-remove').click();
+    await saved();
+    ok('a removed background leaves the phone', await until(() => page.evaluate(() => getComputedStyle(document.body).backgroundImage === 'none')));
+    ok('and the preview', await desk.evaluate(() => getComputedStyle(document.getElementById('phone')).backgroundImage === 'none'));
+
+    const [chooser] = await Promise.all([
+      desk.waitForEvent('filechooser'),
+      desk.locator('#background-choose').click(),
+    ]);
+    await chooser.setFiles({ name: 'cockpit.png', mimeType: 'image/png', buffer: png(1200, 2400, [20, 40, 60]) });
+    await saved();
+    await desk.locator('#shape [data-shape="square"]').click();
+    await saved();
+    ok('an own background is kept large enough for a phone screen', await until(async () => (
+      (await background()).endsWith(' 960')
+    )), await background());
+    ok('square buttons are back', squaresFit(await tiles(page, '#grid'), 180));
+    await phone.close();
+    await pc.close();
+  } finally {
+    killServer();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+}
+
 const X4 = {
   name: 'X4: Foundations',
   columns: 2,
@@ -129,7 +256,6 @@ async function main() {
   editor = `http://127.0.0.1:${ports.editor}`;
   remote = `http://127.0.0.1:${ports.remote}`;
   if (shots) fs.mkdirSync(shots, { recursive: true });
-  await startServer(ports);
 
   const browser = await chromium.launch();
   const errors = [];
@@ -144,6 +270,10 @@ async function main() {
     deviceScaleFactor: 2,
     userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
   };
+
+  await firstRun(browser, ports, phoneOptions, watch);
+  seedDemo();
+  await startServer(ports);
 
   // ---- phone: connect -------------------------------------------------------
   const phone = await browser.newContext({ ...phoneOptions, locale: 'ru-RU' });
