@@ -21,6 +21,7 @@ from game_remote.netinfo import lan_addresses, local_name
 from game_remote.panels import (
     MAX_IMAGE_BYTES,
     MAX_SET_BYTES,
+    HasMacros,
     ImageError,
     NewerFormat,
     Panel,
@@ -41,6 +42,8 @@ LANGUAGE = Query(default=None, pattern="^[a-z]{2}$")
 LANGUAGES = Query(default=None, pattern="^([a-z]{2}(,[a-z]{2}){0,9})?$")
 # What an import does when a game of that name is on the PC already.
 SAME_NAME = Query(default="ask", pattern="^(ask|replace|add)$")
+# What an import does with a set that has macros.
+MACROS = Query(default="ask", pattern="^(ask|allow)$")
 
 
 class NewPanel(BaseModel):
@@ -280,7 +283,10 @@ def create_editor_app(state: AppState) -> FastAPI:
 
     @app.post("/api/sets", status_code=201)
     async def import_set(
-        request: Request, languages: str | None = LANGUAGES, same_name: str = SAME_NAME
+        request: Request,
+        languages: str | None = LANGUAGES,
+        same_name: str = SAME_NAME,
+        macros: str = MACROS,
     ) -> Response:
         """The body is the zip of a set. It becomes a game in the first of
         ``languages`` the set has. When a game of that name is here already,
@@ -293,8 +299,16 @@ def create_editor_app(state: AppState) -> FastAPI:
         try:
             # Unpacking takes a while for a large set; a thread keeps the phones served.
             panel_id = await asyncio.to_thread(
-                state.store.import_set, data, *wanted, same_name=same_name
+                state.store.import_set,
+                data,
+                *wanted,
+                same_name=same_name,
+                macros=macros == "allow",
             )
+        except HasMacros as found:
+            # The PC changes nothing: the page asks whether the macros are welcome.
+            asked = {"error": "macros", "count": found.count, "window": found.window}
+            return JSONResponse(asked, status_code=409)
         except SameName as twin:
             found = {"error": "same_name", "id": twin.panel_id, "name": twin.name}
             return JSONResponse(found, status_code=409)
@@ -351,6 +365,8 @@ def create_editor_app(state: AppState) -> FastAPI:
 
     @app.post("/api/release-keys")
     async def release_keys() -> dict:
+        # A macro that runs would press its next keys a moment later.
+        state.hub.stop_macros()
         for conn in list(state.hub.connections.values()):
             conn.held.clear()
         try:

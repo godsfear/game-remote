@@ -42,8 +42,10 @@ PANEL_FILE = "panel.json"
 # "update me" (NewerFormat) instead of naming the field it stumbled over.
 # Every file the program writes carries this number (see panel_text). A set
 # written by hand does not: when the number grows, a file that uses what is
-# new and says an older number has to be refused in Panel.
-FORMAT = 1
+# new and says an older number is refused (see parse_panel).
+#   1  what the versions up to 0.7.0 read
+#   2  macros: buttons of the type "macro" with their "steps"
+FORMAT = 2
 # The ready-made panel a new user starts with: Star Citizen with the keys the
 # game has by default. It ships with the program as a set, in ``samples``.
 SAMPLE_ID = "star-citizen"
@@ -64,6 +66,11 @@ MAX_SET_BYTES = 50_000_000
 MAX_SET_TEXT_BYTES = 1_000_000
 MAX_SET_FILES = 250
 MAX_SCREENS = 8
+# A macro: how many steps, how long one of them holds its keys or waits, and
+# how long the whole of it may take.
+MAX_STEPS = 20
+MAX_STEP_MS = 5_000
+MAX_MACRO_MS = 30_000
 UNUSED_IMAGE_SECONDS = 600
 
 
@@ -76,6 +83,15 @@ class NewerFormat(ValueError):
 
     def __init__(self) -> None:
         super().__init__("made for a newer version of Game Remote: update the program")
+
+
+class HasMacros(Exception):
+    """An imported set has macros, and nobody said yet that they are welcome."""
+
+    def __init__(self, count: int, window: str | None) -> None:
+        super().__init__(f"the set has {count} macros")
+        self.count = count
+        self.window = window
 
 
 class SameName(Exception):
@@ -99,16 +115,42 @@ def image_extension(data: bytes) -> str | None:
     return None
 
 
+class Step(BaseModel):
+    """One step of a macro: keys that are pressed, and a pause after them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Like the keys of a button.
+    keys: str
+    # How long the keys stay down, in milliseconds. None: as long as in a tap.
+    hold: int | None = Field(default=None, ge=1, le=MAX_STEP_MS)
+    # The pause before the next step, in milliseconds.
+    wait: int = Field(default=0, ge=0, le=MAX_STEP_MS)
+
+    @field_validator("keys")
+    @classmethod
+    def _normalise_keys(cls, value: str) -> str:
+        return Combo.parse(value).serialize()
+
+    @property
+    def combo(self) -> Combo:
+        return Combo.parse(self.keys)
+
+
 class Button(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(pattern=ID_PATTERN)
     label: str = Field(default="", max_length=40)
-    # KeyboardEvent.code values joined by "+", e.g. "ControlLeft+KeyR".
-    keys: str
+    # KeyboardEvent.code values joined by "+", e.g. "ControlLeft+KeyR". Every
+    # button has them but a macro, whose steps have their own.
+    keys: str | None = None
     # tap: a short press. hold: the keys stay down while the finger is on the button.
     # toggle: a short press too, and the button shows whether what it switches is on.
-    type: Literal["tap", "hold", "toggle"] = "tap"
+    # macro: one touch presses the keys of its steps one after another.
+    type: Literal["tap", "hold", "toggle", "macro"] = "tap"
+    # What a macro presses, in this order.
+    steps: list[Step] = Field(default_factory=list, max_length=MAX_STEPS)
     # A toggle that is on when the program starts. The program does not see the
     # game: it counts its own presses from this state.
     on: bool = False
@@ -120,8 +162,8 @@ class Button(BaseModel):
 
     @field_validator("keys")
     @classmethod
-    def _normalise_keys(cls, value: str) -> str:
-        return Combo.parse(value).serialize()
+    def _normalise_keys(cls, value: str | None) -> str | None:
+        return None if value is None else Combo.parse(value).serialize()
 
     @model_validator(mode="after")
     def _only_a_toggle_starts_on(self) -> Button:
@@ -129,16 +171,43 @@ class Button(BaseModel):
             raise ValueError('"on" is for a button of the type "toggle"')
         return self
 
+    @model_validator(mode="after")
+    def _keys_or_steps(self) -> Button:
+        if self.type != "macro":
+            if self.keys is None:
+                raise ValueError('the button has no "keys"')
+            if self.steps:
+                raise ValueError('"steps" are for a button of the type "macro"')
+            return self
+        if self.keys is not None:
+            raise ValueError('a macro has "steps" and no "keys" of its own')
+        if not self.steps:
+            raise ValueError('a macro has "steps"')
+        if self.duration_ms() > MAX_MACRO_MS:
+            raise ValueError(f"the macro takes longer than {MAX_MACRO_MS // 1000} seconds")
+        return self
+
+    def duration_ms(self) -> int:
+        """How long a macro holds keys and waits; a tap is counted as nothing."""
+        return sum((step.hold or 0) + step.wait for step in self.steps)
+
     @property
     def combo(self) -> Combo:
-        return Combo.parse(self.keys)
+        """The keys of a button that is not a macro."""
+        return Combo.parse(self.keys or "")
+
+    def keys_label(self) -> str:
+        """The keys as a person reads them; of a macro, step by step."""
+        if self.type == "macro":
+            return ", ".join(step.combo.label() for step in self.steps)
+        return self.combo.label()
 
 
 class Panel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Every format this program reads; FORMAT is the newest of them.
-    format: Literal[1] = 1
+    format: Literal[1, 2] = 1
     # Only in a panel that is shared as a set (see PanelSet): the language its
     # texts are in, e.g. "en". A panel in the user's own folder does not carry it.
     language: str | None = Field(default=None, pattern=r"^[a-z]{2}$")
@@ -180,6 +249,10 @@ class Panel(BaseModel):
 
     def button(self, button_id: str) -> Button | None:
         return next((b for b in self.buttons if b.id == button_id), None)
+
+    def macros(self) -> int:
+        """How many of the buttons are macros."""
+        return sum(button.type == "macro" for button in self.buttons)
 
     def images(self) -> set[str]:
         """Names of the picture files the panel shows."""
@@ -262,7 +335,12 @@ def parse_panel(data: object) -> Panel:
     newer = isinstance(data, dict) and isinstance(data.get("format"), (int, float))
     if newer and data["format"] > FORMAT:
         raise NewerFormat
-    return Panel.model_validate(data)
+    panel = Panel.model_validate(data)
+    # The program before macros takes a file that says nothing for format 1
+    # and stumbles over the macro: such a file has to say what it is.
+    if panel.macros() and data.get("format", 1) < 2:
+        raise ValueError('a panel with a macro says "format": 2')
+    return panel
 
 
 def panel_text(panel: Panel) -> str:
@@ -280,6 +358,11 @@ def panel_text(panel: Panel) -> str:
             del button["screen"]
         if not button["on"]:
             del button["on"]
+        if not button["steps"]:
+            del button["steps"]
+        for step in button.get("steps", ()):
+            if not step["wait"]:
+                del step["wait"]
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
@@ -588,10 +671,18 @@ class PanelStore:
         return panel_id
 
     def import_set(
-        self, data: bytes, *languages: str, same_name: Literal["add", "replace", "ask"] = "add"
+        self,
+        data: bytes,
+        *languages: str,
+        same_name: Literal["add", "replace", "ask"] = "add",
+        macros: bool = False,
     ) -> str:
         """Make the set in a zip a panel, in the first of ``languages`` the set
         has; returns its id. A ValueError says what is wrong with the file.
+
+        A set with macros is taken only when ``macros`` says so; else nothing
+        changes and HasMacros tells how many there are and in which window
+        they would press their keys.
 
         ``same_name`` is what to do when a game of that name is here already:
         "add" the set next to it, "replace" the game (it goes to the trash
@@ -603,6 +694,8 @@ class PanelStore:
             with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporary:
                 unpack_set(data, Path(temporary))
                 panel_set = read_set(Path(temporary))
+                if panel_set.panel.macros() and not macros:
+                    raise HasMacros(panel_set.panel.macros(), panel_set.panel.window)
                 name = panel_set.in_language(*languages).name
                 # Several games may share the name; the first of them stands for all.
                 twin = next(

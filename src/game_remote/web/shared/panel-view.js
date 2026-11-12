@@ -1,14 +1,17 @@
 // Draws a panel. The phone and the preview in the editor both use this code,
 // so what the editor shows is what the phone gets.
 
-// button: { id, label, type: 'tap' | 'hold' | 'toggle', on, color, image (a URL or null) }
+// button: { id, label, type: 'tap' | 'hold' | 'toggle' | 'macro', on, color,
+//           image (a URL or null) }
 export function buttonNode(button) {
   const node = document.createElement('button');
   node.type = 'button';
-  node.className = `btn ${['hold', 'toggle'].includes(button.type) ? button.type : 'tap'}`;
+  node.className = `btn ${['hold', 'toggle', 'macro'].includes(button.type) ? button.type : 'tap'}`;
   node.dataset.button = button.id;
-  // A toggle is lit while what it switches is on.
-  if (button.type === 'toggle') node.setAttribute('aria-pressed', String(Boolean(button.on)));
+  // A toggle is lit while what it switches is on, a macro while it runs.
+  if (['toggle', 'macro'].includes(button.type)) {
+    node.setAttribute('aria-pressed', String(Boolean(button.on)));
+  }
   if (button.color) node.style.setProperty('--color', button.color);
   if (button.image) {
     const img = document.createElement('img');

@@ -71,6 +71,25 @@ def test_the_page_says_which_version_a_set_with_toggles_needs(tmp_path):
     assert build_sets.main(["--help"]) == 2  # and an option is not taken for a folder
 
 
+def test_a_set_with_macros_names_the_window_they_press_keys_in(tmp_path, capsys):
+    macro = {"id": "dock", "type": "macro", "steps": [{"keys": "KeyN"}, {"keys": "Enter"}]}
+    write_set(tmp_path / "sets", panel={**ELITE, "format": 2, "buttons": [macro]})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "sets",)) == 1
+    assert 'FAIL elite: panel.json: a set with macros says the "window"' in capsys.readouterr().out
+    write_set(
+        tmp_path / "bound", panel={**ELITE, "format": 2, "window": "E.exe", "buttons": [macro]}
+    )
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "bound",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.8.0 or newer")
+    # The program writes format 2 into every set it exports: such a set needs
+    # that version without a macro in it, too.
+    write_set(tmp_path / "exported", panel={**ELITE, "format": 2})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "exported",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.8.0 or newer")
+
+
 @pytest.mark.parametrize(
     ("name", "panel", "files", "problem"),
     [

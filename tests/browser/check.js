@@ -413,6 +413,77 @@ async function main() {
   fs.writeFileSync(demoPath, plainDemo);
   ok('the button is plain again', await until(async () => (await page.locator('.btn.toggle').count()) === 0));
 
+  // ---- phone: a macro ----------------------------------------------------------
+  // "Пауза" becomes a macro for a while: W is held for long, then Escape.
+  const demoOnPc = async () => (await (await fetch(`${editor}/api/panels`)).json()).panels.find((p) => p.id === 'demo');
+  const withMacro = JSON.parse(plainDemo);
+  Object.assign(withMacro.buttons.find((button) => button.id === 'pause'), {
+    type: 'macro', keys: undefined, steps: [{ keys: 'KeyW', hold: 4000 }, { keys: 'Escape' }],
+  });
+  fs.writeFileSync(demoPath, JSON.stringify({ ...withMacro, format: 2 }));
+  const player = page.locator('.btn.macro[data-button="pause"]');
+  ok('a macro is drawn with a sign of its own and unlit', await until(async () => (await player.getAttribute('aria-pressed')) === 'false'));
+  const tapPause = async () => {
+    await touch('touchStart', [{ ...pause, id: 1 }]);
+    await touch('touchEnd', [{ ...pause, id: 1 }]);
+  };
+  await tapPause();
+  ok('a macro of a game without a window says why it does not run', await until(async () => (
+    (await page.locator('#toast').isVisible()) && (await page.locator('#toast').textContent()).includes('окне своей игры')
+  )));
+  ok('and presses nothing', (await held()) === '[]');
+  fs.writeFileSync(demoPath, JSON.stringify({ ...withMacro, format: 2, window: 'X4.exe' }));
+  await until(async () => (await demoOnPc()).window === 'X4.exe');
+  await sleep(600); // the quiet moment of the phone after a change of the panel is over
+  await tapPause();
+  ok('a macro lights its button and holds the keys of its step', await until(async () => (
+    (await player.getAttribute('aria-pressed')) === 'true' && (await held()) === '["KeyW"]'
+  )));
+  await shot(page, 'phone-macro');
+  // Moving about in the remote itself leaves the macro running.
+  await page.locator('#menu-open').tap();
+  await sleep(400);
+  ok('a macro goes on while the menu of the remote is open',
+    (await player.getAttribute('aria-pressed')) === 'true' && (await held()) === '["KeyW"]');
+  await page.locator('#menu-close').tap();
+  await tapPause();
+  ok('a second touch stops the macro and lets its keys go', await until(async () => (
+    (await player.getAttribute('aria-pressed')) === 'false' && (await held()) === '[]'
+  )));
+  // A phone that looks elsewhere ends its macro, like it lets go of a held button.
+  await tapPause();
+  await until(async () => (await player.getAttribute('aria-pressed')) === 'true' && (await held()) === '["KeyW"]');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  ok('a macro ends when the page of the phone is left', await until(async () => (
+    (await player.getAttribute('aria-pressed')) === 'false' && (await held()) === '[]'
+  )));
+  await sleep(300);
+  ok('and the steps that were left are not pressed',
+    !(await status()).recent.some((press) => press.keys === 'Esc') && (await held()) === '[]');
+  // The tab of another screen of the game does not end a macro either.
+  const onScreens = { ...withMacro, format: 2, window: 'X4.exe', screens: ['Полёт', 'Бой'] };
+  fs.writeFileSync(demoPath, JSON.stringify(onScreens));
+  await page.waitForSelector('#screens button[data-screen="1"]');
+  await sleep(600);
+  const underTabs = await center('pause'); // the tabs moved the buttons
+  const tapUnderTabs = async () => {
+    await touch('touchStart', [{ ...underTabs, id: 1 }]);
+    await touch('touchEnd', [{ ...underTabs, id: 1 }]);
+  };
+  await tapUnderTabs();
+  await until(async () => (await player.getAttribute('aria-pressed')) === 'true' && (await held()) === '["KeyW"]');
+  await page.locator('#screens button[data-screen="1"]').tap();
+  await sleep(400);
+  ok('a macro goes on when another screen of the game is opened',
+    (await page.locator('.btn.macro').count()) === 0 && (await held()) === '["KeyW"]');
+  await page.locator('#screens button[data-screen="0"]').tap();
+  ok('and its button is still lit on the way back',
+    await until(async () => (await player.getAttribute('aria-pressed')) === 'true'));
+  await tapUnderTabs();
+  await until(async () => (await held()) === '[]');
+  fs.writeFileSync(demoPath, plainDemo);
+  ok('the button is plain once more', await until(async () => (await page.locator('.btn.macro').count()) === 0));
+
   // ---- phone: settings of the device -----------------------------------------
   await page.locator('#menu-open').tap();
   await page.waitForSelector('#menu:not([hidden])');
@@ -572,6 +643,52 @@ async function main() {
   const inFile = JSON.parse(fs.readFileSync(path.join(dataDir, 'panels', 'game', 'panel.json'), 'utf8')).buttons[1];
   ok('a toggle that starts off has nothing about it in the file', inFile.type === 'toggle' && !('on' in inFile));
   await shot(desk, 'pc-editor-toggle', { fullPage: true });
+
+  // A macro: steps in place of the one shortcut.
+  const fileOfGame = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'panels', 'game', 'panel.json'), 'utf8'));
+  ok('only a macro shows steps', await desk.locator('#steps-field').isHidden());
+  await desk.click('#button-type [data-type="macro"]');
+  ok('the keys of the button become the first step of the macro',
+    (await desk.locator('#step-list li .keys').allTextContents()).join() === 'M');
+  ok('a macro in a game without a window says that it will not work', await desk.locator('#macro-window-hint').isVisible());
+  await desk.locator('#step-list li input[data-field="wait"]').fill('9000');
+  await desk.locator('#step-list li input[data-field="wait"]').blur(); // the typing is over
+  ok('a step waits no longer than the PC takes, and its field shows that',
+    (await desk.locator('#step-list li input[data-field="wait"]').inputValue()) === '5000');
+  await desk.locator('#step-list li input[data-field="wait"]').fill('300');
+  await desk.click('#add-step');
+  ok('a new step waits for its keys', (await desk.locator('#step-list li[aria-current="true"] .keys.missing').count()) === 1);
+  await desk.click('#record');
+  await desk.keyboard.press('Enter');
+  await desk.locator('#step-list li').nth(1).locator('input[data-field="hold"]').fill('200');
+  await saved();
+  await until(() => fileOfGame().buttons[1].steps?.length === 2 && fileOfGame().buttons[1].steps[1].hold === 200);
+  const macroInFile = fileOfGame().buttons[1];
+  ok('a macro is saved with its steps and without keys of its own', macroInFile.type === 'macro' && !('keys' in macroInFile)
+    && JSON.stringify(macroInFile.steps) === JSON.stringify([{ keys: 'KeyM', wait: 300 }, { keys: 'Enter', hold: 200 }]));
+  ok('the file says the format that has macros', fileOfGame().format === 2);
+  ok('the list of buttons names the number of steps',
+    (await desk.locator('#button-list li[aria-current="true"] .keys').textContent()).includes('2'));
+  ok('the preview marks a macro', (await desk.locator('#preview .btn.macro').count()) === 1);
+  await shot(desk, 'pc-editor-macro', { fullPage: true });
+  // The steps change places, and one of them goes away.
+  await desk.locator('#step-list li').nth(1).locator('button', { hasText: '↑' }).click();
+  ok('a step moves up', (await desk.locator('#step-list li .keys').allTextContents()).join() === 'Enter,M');
+  await desk.locator('#step-list li').first().locator('button', { hasText: '×' }).click();
+  ok('a step is removed', (await desk.locator('#step-list li .keys').allTextContents()).join() === 'M');
+  ok('the last step cannot be removed', await desk.locator('#step-list li button', { hasText: '×' }).isDisabled());
+  await saved();
+  // Back to a plain button: it takes the keys its first step has now.
+  await desk.click('#record');
+  await desk.keyboard.press('KeyN');
+  await desk.click('#button-type [data-type="tap"]');
+  await saved();
+  await until(async () => (await stored('game')).buttons[1].type === 'tap');
+  ok('a macro turned into a plain button leaves it the keys of its first step',
+    (await stored('game')).buttons[1].keys === 'KeyN');
+  await desk.click('#record');
+  await desk.keyboard.press('KeyM');
+  await saved();
   await desk.click('#button-type [data-type="tap"]');
   await saved();
 
@@ -851,6 +968,20 @@ async function main() {
   ok('a set made for a newer version asks to update the program', await until(async () => (
     /Обновите программу|Update the program/.test(await desk.locator('#save-state').textContent())
   )));
+  // What the PC answers to a set with macros: the page asks before it goes on.
+  await desk.route('**/api/sets*', (route) => route.fulfill({
+    status: 409, contentType: 'application/json', body: '{"error":"macros","count":3,"window":"X4.exe"}',
+  }), { times: 1 });
+  const [macroChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await macroChooser.setFiles(await download.path());
+  await desk.waitForSelector('#macros-dialog[open]');
+  const asked = await desk.locator('#macros-text').textContent();
+  ok('a set with macros is asked about, with their number and the window they press keys in',
+    asked.includes('3') && asked.includes('X4.exe'));
+  const gamesBefore = (await games()).length;
+  await desk.click('#macros-dialog button[value="cancel"]');
+  await sleep(300);
+  ok('and a set that is not welcome changes nothing', (await games()).length === gamesBefore);
 
   // A game that cannot be saved keeps what the page has when another game arrives.
   await desk.click(`#game-list button[data-panel="${original.id}"]`);
@@ -1012,6 +1143,15 @@ async function main() {
   ok('a rejected press says why', (await mock.locator('#toast').textContent()).includes('администратора'));
   ok('a rejected press feels different from an accepted one', (await mock.evaluate(() => JSON.stringify(window.buzzes))) === '[12,[30,60,30]]');
   await shot(mock, 'phone-rejected');
+  // The PC ended a macro of this phone before its last step, and says why.
+  await mock.waitForSelector('#toast', { state: 'hidden' });
+  fakePc.send(JSON.stringify({ type: 'stopped', panel: 'u', button: 'b', reason: 'not_focused' }));
+  ok('a macro the PC stopped says why', await until(async () => (
+    (await mock.locator('#toast').isVisible()) && (await mock.locator('#toast').textContent()).includes('не активно')
+  )));
+  ok('and marks its button like a press that was refused',
+    (await mock.locator('.btn.rejected[data-button="b"]').count()) === 1
+    && (await mock.evaluate(() => JSON.stringify(window.buzzes))).endsWith(',[30,60,30],[30,60,30]]'));
 
   // ---- the phone follows the game whose window is active on the PC ----------
   const shownGame = () => mock.locator('#panel-name').textContent();

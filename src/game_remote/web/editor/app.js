@@ -27,7 +27,8 @@ const el = Object.fromEntries([
   'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
   'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
   'same-dialog', 'same-text', 'update', 'update-text', 'check-updates',
-  'toggle-on', 'toggle-on-field',
+  'toggle-on', 'toggle-on-field', 'steps-field', 'step-list', 'add-step',
+  'macro-window-hint', 'macros-dialog', 'macros-text',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -43,6 +44,7 @@ let versions = {}; // panel id -> file name -> the time of the picture on the PC
 let revision = 0; // the last state of the panel files this page knows
 let currentId = store.get(PANEL_STORE);
 let selectedId = null; // the button being edited
+let stepIndex = 0; // the step of its macro whose keys are shown and recorded
 let screen = 0; // the screen of the current game that the list and the preview show
 let keyLabels = new Map(); // key code -> short label
 let modifiers = [];
@@ -62,7 +64,12 @@ let savingCheck = false; // the box of the update check is being saved
 const dirty = new Set(); // ids of panels with changes not yet on the PC
 
 // The name of each kind of button; its hint has the same key with "Hint".
-const TYPE_TEXTS = { tap: 'editor.typeTap', hold: 'editor.typeHold', toggle: 'editor.typeToggle' };
+const TYPE_TEXTS = {
+  tap: 'editor.typeTap', hold: 'editor.typeHold', toggle: 'editor.typeToggle', macro: 'editor.typeMacro',
+};
+const MAX_STEPS = 20; // of a macro, like on the PC
+const MAX_STEP_MS = 5000; // the longest pause or hold of one step
+const MAX_MACRO_MS = 30000; // the longest a whole macro holds and waits
 
 const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
 const selectedButton = () => currentPanel()?.buttons.find((b) => b.id === selectedId) || null;
@@ -143,6 +150,26 @@ function changed() {
   saveTimer = setTimeout(save, SAVE_DELAY_MS);
 }
 
+// A button has something to press: keys of its own, or a macro one step with keys.
+function ready(button) {
+  if (button.type === 'macro') return (button.steps || []).some((step) => step.keys);
+  return Boolean(button.keys);
+}
+
+// What the keys are recorded into: the button, or the chosen step of its macro.
+function keysTarget(button = selectedButton()) {
+  if (!button) return null;
+  return button.type === 'macro' ? button.steps[stepIndex] || null : button;
+}
+
+function stepsForFile(button) {
+  return button.steps.filter((step) => step.keys).map((step) => ({
+    keys: step.keys,
+    ...(step.hold ? { hold: step.hold } : {}),
+    ...(step.wait ? { wait: step.wait } : {}),
+  }));
+}
+
 // What goes into the file: a button without keys is not a button yet. The
 // number of the file's format is not the page's to say: the PC writes it.
 function forFile(panel) {
@@ -154,10 +181,11 @@ function forFile(panel) {
     background: panel.background || null,
     shape: panel.shape || 'fill',
     screens: screenNames(panel),
-    buttons: panel.buttons.filter((button) => button.keys).map((button) => ({
+    buttons: panel.buttons.filter(ready).map((button) => ({
       id: button.id,
       label: button.label,
-      keys: button.keys,
+      // A macro has steps where another button has keys.
+      ...(button.type === 'macro' ? { steps: stepsForFile(button) } : { keys: button.keys }),
       type: button.type,
       // Only a toggle starts on, and the file says so only when it does.
       ...(button.type === 'toggle' && button.on ? { on: true } : {}),
@@ -308,11 +336,16 @@ function wantedLanguages() {
 // The set becomes a game, in the first of these languages the set has. When a
 // game of that name is on the PC already, the PC changes nothing and says so:
 // the page asks, and the answer sends the same file again (see the wiring).
-async function importSet(sameName = 'ask') {
+// A set with macros is asked about in the same way, before that.
+let importAnswers = { sameName: 'ask', macros: 'ask' };
+
+async function importSet(answers = {}) {
   const [file] = el['set-file'].files;
   if (!file) return;
+  importAnswers = { ...importAnswers, ...answers };
   await save();
-  const query = `languages=${wantedLanguages().join(',')}&same_name=${sameName}`;
+  const query = `languages=${wantedLanguages().join(',')}&same_name=${importAnswers.sameName}`
+    + `&macros=${importAnswers.macros}`;
   const response = await fetch(`/api/sets?${query}`, {
     method: 'POST',
     body: file,
@@ -320,6 +353,13 @@ async function importSet(sameName = 'ask') {
   });
   let data = null;
   try { data = await response.json(); } catch { /* no body */ }
+  if (response.status === 409 && data?.error === 'macros') {
+    const text = data.window ? 'editor.macrosAsk' : 'editor.macrosAskNoWindow';
+    el['macros-text'].textContent = t(text, { count: data.count, window: data.window });
+    el['macros-dialog'].returnValue = '';
+    el['macros-dialog'].showModal();
+    return;
+  }
   if (response.status === 409 && data?.error === 'same_name') {
     el['same-text'].textContent = t('editor.sameName', { name: data.name });
     el['same-dialog'].returnValue = '';
@@ -397,6 +437,7 @@ function setWindow(exe, elevated = false) {
   elevatedWindow = exe && elevated ? panel.id : null;
   windowChoice = null;
   fillWindow(panel);
+  fillButtonForm(); // a macro says whether its game has a window
   changed();
 }
 
@@ -477,7 +518,7 @@ function renderButtons() {
     const swatch = node('span', 'swatch');
     if (button.color) swatch.style.setProperty('--color', button.color);
     const name = node('span', button.label ? 'name' : 'name unnamed', button.label || t('editor.noLabel'));
-    const keys = node('span', button.keys ? 'keys' : 'keys missing', button.keys ? comboLabel(button.keys) : t('editor.noKeys'));
+    const keys = node('span', ready(button) ? 'keys' : 'keys missing', keysText(button));
     const kind = node('span', 'kind', t(TYPE_TEXTS[button.type] || TYPE_TEXTS.tap));
     const move = node('span', 'move');
     for (const [step, sign, key] of [[-1, '↑', 'editor.moveUp'], [1, '↓', 'editor.moveDown']]) {
@@ -531,8 +572,18 @@ function moveButton(from, to) {
   changed();
 }
 
+// The keys of a button in one line of the list.
+function keysText(button) {
+  if (!ready(button)) return t('editor.noKeys');
+  if (button.type !== 'macro') return comboLabel(button.keys);
+  return t('editor.stepsCount', { count: button.steps.filter((step) => step.keys).length });
+}
+
 function selectButton(id) {
-  if (id !== selectedId) stopCapture();
+  if (id !== selectedId) {
+    stopCapture();
+    stepIndex = 0;
+  }
   selectedId = id;
   renderButtons();
   fillButtonForm();
@@ -555,7 +606,9 @@ function addButton() {
 function duplicateButton() {
   const panel = currentPanel();
   const button = selectedButton();
-  const copy = { ...button, id: newButtonId(panel) };
+  const copy = {
+    ...button, id: newButtonId(panel), steps: (button.steps || []).map((step) => ({ ...step })),
+  };
   panel.buttons.splice(panel.buttons.indexOf(button) + 1, 0, copy);
   selectButton(copy.id);
   renderGames();
@@ -580,6 +633,7 @@ function fillButtonForm() {
   el['button-card'].hidden = !button;
   if (!button) return;
   if (document.activeElement !== el['button-label']) el['button-label'].value = button.label;
+  renderSteps(button);
   showCombo();
   for (const choice of el['button-type'].children) {
     choice.setAttribute('aria-pressed', String(choice.dataset.type === button.type));
@@ -592,7 +646,7 @@ function fillButtonForm() {
   }
   el.colors.querySelector('input').value = button.color || '#2b3040';
   showThumb(el['image-thumb'], el['image-remove'], currentPanel(), button.image);
-  fillManual(button);
+  fillManual(keysTarget(button));
   const names = screenNames(currentPanel());
   el['button-screen-field'].hidden = names.length < 2;
   el['button-screen'].replaceChildren(...names.map((name, index) => {
@@ -603,9 +657,92 @@ function fillButtonForm() {
   el['button-screen'].value = String(button.screen || 0);
 }
 
+// The steps of a macro. A click on a step shows its keys in the field below,
+// where they are recorded like the keys of any button.
+function renderSteps(button) {
+  const macro = button.type === 'macro';
+  el['steps-field'].hidden = !macro;
+  if (!macro) return;
+  stepIndex = Math.min(stepIndex, button.steps.length - 1);
+  el['macro-window-hint'].hidden = Boolean(currentPanel().window);
+  el['add-step'].disabled = button.steps.length >= MAX_STEPS;
+  el['step-list'].replaceChildren(...button.steps.map((step, index) => {
+    const li = node('li');
+    li.setAttribute('aria-current', String(index === stepIndex));
+    li.append(node('span', step.keys ? 'keys' : 'keys missing', step.keys ? comboLabel(step.keys) : t('editor.noKeys')));
+    for (const [field, text] of [['hold', 'editor.stepHold'], ['wait', 'editor.stepWait']]) {
+      const label = node('label', '', t(text));
+      const input = node('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = String(MAX_STEP_MS);
+      input.step = '50';
+      input.dataset.field = field;
+      input.value = step[field] ? String(step[field]) : '';
+      input.placeholder = '0';
+      input.addEventListener('click', (event) => event.stopPropagation());
+      input.addEventListener('input', () => {
+        // No more than the PC takes: for one step, and for the macro as a whole.
+        const others = button.steps.reduce((sum, each) => sum + (each.hold || 0) + (each.wait || 0), 0)
+          - (step[field] || 0);
+        const most = Math.max(0, Math.min(MAX_STEP_MS, MAX_MACRO_MS - others));
+        const value = Math.min(most, Math.max(0, Math.round(Number(input.value) || 0)));
+        step[field] = value || (field === 'hold' ? null : 0);
+        if (ready(button)) changed();
+      });
+      // The field shows what was taken, once the typing is over.
+      input.addEventListener('change', () => { input.value = step[field] ? String(step[field]) : ''; });
+      label.append(input);
+      li.append(label);
+    }
+    const moves = [[-1, '↑', 'editor.moveUp'], [1, '↓', 'editor.moveDown'], [0, '×', 'editor.removeStep']];
+    for (const [shift, sign, key] of moves) {
+      const act = node('button', '', sign);
+      act.type = 'button';
+      act.title = t(key);
+      act.setAttribute('aria-label', t(key));
+      act.disabled = shift ? index + shift < 0 || index + shift >= button.steps.length : button.steps.length < 2;
+      act.addEventListener('click', (event) => {
+        event.stopPropagation();
+        stopCapture();
+        button.steps.splice(index, 1);
+        if (shift) button.steps.splice(index + shift, 0, step);
+        stepIndex = shift ? index + shift : Math.min(index, button.steps.length - 1);
+        stepsChanged(button);
+      });
+      li.append(act);
+    }
+    li.addEventListener('click', () => {
+      if (index === stepIndex) return;
+      stopCapture();
+      stepIndex = index;
+      fillButtonForm();
+    });
+    return li;
+  }));
+}
+
+function stepsChanged(button) {
+  fillButtonForm();
+  renderButtons();
+  renderPreview();
+  renderGames();
+  if (ready(button)) changed();
+}
+
+function addStep() {
+  const button = selectedButton();
+  if (!button || button.steps.length >= MAX_STEPS) return;
+  stopCapture();
+  button.steps.push({ keys: '', hold: null, wait: 0 });
+  stepIndex = button.steps.length - 1;
+  fillButtonForm();
+}
+
 function showCombo() {
   const button = selectedButton();
   if (!button) return;
+  const target = keysTarget(button);
   el.combo.classList.toggle('recording', Boolean(capture));
   el.record.textContent = t(capture ? 'editor.cancel' : 'editor.record');
   if (capture) {
@@ -613,8 +750,8 @@ function showCombo() {
     el.combo.textContent = capture.all.length ? comboLabel(capture.all.join('+')) : t('editor.pressKeys');
     return;
   }
-  el.combo.classList.toggle('missing', !button.keys);
-  el.combo.textContent = button.keys ? comboLabel(button.keys) : t('editor.noKeys');
+  el.combo.classList.toggle('missing', !target?.keys);
+  el.combo.textContent = target?.keys ? comboLabel(target.keys) : t('editor.noKeys');
 }
 
 function setKeys(codes) {
@@ -631,8 +768,8 @@ function setKeys(codes) {
     ...modifiers.filter((code) => codes.includes(code)),
     ...codes.filter((code) => !modifiers.includes(code)),
   ];
-  const wasNew = !button.keys;
-  button.keys = ordered.join('+');
+  const wasNew = !ready(button);
+  keysTarget(button).keys = ordered.join('+');
   fillButtonForm();
   renderButtons();
   renderPreview();
@@ -685,8 +822,8 @@ document.addEventListener('focusin', (event) => {
   if (event.target.matches('input, select, textarea')) stopCapture();
 });
 
-function fillManual(button) {
-  const codes = button.keys ? button.keys.split('+') : [];
+function fillManual(target) {
+  const codes = target?.keys ? target.keys.split('+') : [];
   for (const box of el.manual.querySelectorAll('input[data-mod]')) {
     const right = box.dataset.mod.replace('Left', 'Right');
     box.checked = codes.includes(box.dataset.mod) || codes.includes(right);
@@ -798,7 +935,7 @@ function setPicture(panel, target, name) {
     const button = panel.buttons.find((candidate) => candidate.id === target);
     if (!button) return;
     button.image = name;
-    if (!button.keys) { // a draft: nothing to save yet
+    if (!ready(button)) { // a draft: nothing to save yet
       renderAll();
       return;
     }
@@ -836,7 +973,7 @@ function renderPreview() {
   nodes.forEach((buttonNode, index) => {
     const button = buttons[index];
     buttonNode.classList.toggle('selected', button.id === selectedId);
-    buttonNode.classList.toggle('draft', !button.keys); // not on the phone yet
+    buttonNode.classList.toggle('draft', !ready(button)); // not on the phone yet
     buttonNode.addEventListener('click', () => selectButton(button.id));
   });
 }
@@ -1013,11 +1150,17 @@ el['import-set'].addEventListener('click', () => {
   el['set-file'].value = '';
   el['set-file'].click();
 });
-el['set-file'].addEventListener('change', report(() => importSet()));
+el['set-file'].addEventListener('change', report(() => {
+  importAnswers = { sameName: 'ask', macros: 'ask' }; // a new file: nothing is answered yet
+  return importSet();
+}));
 el['same-dialog'].addEventListener('close', report(() => {
   const answer = el['same-dialog'].returnValue;
-  return answer === 'add' || answer === 'replace' ? importSet(answer) : null;
+  return answer === 'add' || answer === 'replace' ? importSet({ sameName: answer }) : null;
 }));
+el['macros-dialog'].addEventListener('close', report(() => (
+  el['macros-dialog'].returnValue === 'allow' ? importSet({ macros: 'allow' }) : null
+)));
 el['game-name'].addEventListener('input', () => {
   currentPanel().name = el['game-name'].value;
   renderGames();
@@ -1041,31 +1184,43 @@ el['button-screen'].addEventListener('change', () => {
   button.screen = Number(el['button-screen'].value);
   screen = button.screen; // follow the button to its new screen
   renderAll();
-  if (button.keys) changed();
+  if (ready(button)) changed();
 });
 el['button-label'].addEventListener('input', () => {
   const button = selectedButton();
   button.label = el['button-label'].value;
   renderButtons();
   renderPreview();
-  if (button.keys) changed();
+  if (ready(button)) changed();
 });
 el.record.addEventListener('click', () => (capture ? stopCapture() : startCapture()));
 for (const choice of el['button-type'].children) {
   choice.addEventListener('click', () => {
     const button = selectedButton();
-    button.type = choice.dataset.type;
+    const kind = choice.dataset.type;
+    stopCapture();
+    // The keys go along: they become the first step of a new macro, and a
+    // macro that turns into another button leaves it the keys of its first step.
+    if (kind === 'macro' && !(button.steps || []).length) {
+      button.steps = [{ keys: button.keys || '', hold: null, wait: 0 }];
+    }
+    if (kind !== 'macro' && button.type === 'macro') {
+      button.keys = button.steps.find((step) => step.keys)?.keys || button.keys || '';
+    }
+    button.type = kind;
+    stepIndex = 0;
     fillButtonForm();
     renderButtons();
     renderPreview();
-    if (button.keys) changed();
+    if (ready(button)) changed();
   });
 }
+el['add-step'].addEventListener('click', addStep);
 el['toggle-on'].addEventListener('change', () => {
   const button = selectedButton();
   button.on = el['toggle-on'].checked;
   renderPreview();
-  if (button.keys) changed();
+  if (ready(button)) changed();
 });
 for (const box of el.manual.querySelectorAll('input[data-mod]')) box.addEventListener('change', manualChanged);
 el['manual-key'].addEventListener('change', manualChanged);

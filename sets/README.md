@@ -35,7 +35,8 @@
 ### Клавиши
 
 - Ставьте клавиши, которые назначены в игре по умолчанию. Если набор рассчитан на другую раскладку, напишите об этом в `README.md` набора.
-- Набор нажимает только клавиши и сочетания, которые видны в редакторе. Макросов и скриптов в нём нет.
+- Набор нажимает только клавиши и сочетания, которые видны в редакторе; скриптов в нём нет. Макрос — тоже видимый список шагов.
+- Набор с макросами обязан называть окно игры (`"window": "Game.exe"`) и формат (`"format": 2`). Макрос работает только в этом окне, а тот, кто импортирует набор, видит имя окна и число макросов. Такой набор открывается версией 0.8.0 и новее.
 - Привязку к окну игры (`"window": "Game.exe"`) указывайте, если знаете имя exe: тогда нажатия не попадут в другую программу.
 
 ### Картинки
@@ -88,7 +89,8 @@ The folder holds no other files.
 ### Keys
 
 - Use the keys the game has by default. If the set is made for another layout, say so in the `README.md` of the set.
-- A set presses only the keys and shortcuts that the editor shows. It has no macros and no scripts.
+- A set presses only the keys and shortcuts that the editor shows; it has no scripts. A macro is a list of steps that can be seen too.
+- A set with macros has to name the window of its game (`"window": "Game.exe"`) and its format (`"format": 2`). A macro works only in that window, and whoever imports the set is shown the name of the window and the number of macros. Such a set is read by version 0.8.0 and newer.
 - Bind the set to the game's window (`"window": "Game.exe"`) if you know the name of the exe: then a press never lands in another program.
 
 ### Pictures

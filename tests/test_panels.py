@@ -11,6 +11,7 @@ from game_remote.panels import (
     FORMAT,
     SAMPLE_ID,
     Button,
+    HasMacros,
     NewerFormat,
     Panel,
     PanelStore,
@@ -246,7 +247,29 @@ def test_keys_are_normalised_modifiers_first():
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "color": "red"}]},
         {"name": "x", "buttons": [], "columns": 0},
         {"name": "x", "buttons": [], "macro": "anything"},
-        {"name": "x", "buttons": [], "format": 2},
+        {"name": "x", "buttons": [], "format": 3},
+        # A macro: steps and nothing else to press, not too many and not too long.
+        {"name": "x", "buttons": [{"id": "a", "type": "macro"}]},
+        {"name": "x", "buttons": [{"id": "a", "type": "macro", "steps": []}]},
+        {"name": "x", "buttons": [{"id": "a", "type": "macro", "steps": [{"keys": "Nope"}]}]},
+        {"name": "x", "buttons": [{"id": "a", "type": "macro", "steps": [{"wait": 100}]}]},
+        {"name": "x", "buttons": [{"id": "a", "type": "macro", "steps": [{"keys": "KeyA"}] * 21}]},
+        {
+            "name": "x",
+            "buttons": [
+                {"id": "a", "type": "macro", "steps": [{"keys": "KeyA", "wait": 5000}] * 7}
+            ],
+        },
+        {
+            "name": "x",
+            "buttons": [{"id": "a", "type": "macro", "steps": [{"keys": "KeyA", "hold": 5001}]}],
+        },
+        {
+            "name": "x",
+            "buttons": [{"id": "a", "type": "macro", "steps": [{"keys": "KeyA", "text": "hi"}]}],
+        },
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "steps": [{"keys": "KeyB"}]}]},
+        {"name": "x", "buttons": [{"id": "a"}]},
         {"buttons": []},
     ],
 )
@@ -376,7 +399,9 @@ def test_a_set_becomes_a_panel_in_one_language(tmp_path):
     store = PanelStore(tmp_path / "panels")
     store.install_set(shared, "elite", "ru")
     store.load()
-    assert store.panels["elite"].panel == russian and russian.language is None
+    # The file carries the format of the program that wrote it.
+    assert store.panels["elite"].panel == russian.model_copy(update={"format": FORMAT})
+    assert russian.language is None
     assert sorted(p.name for p in (tmp_path / "panels" / "elite").iterdir()) == [
         "cover.png",
         "panel.json",
@@ -466,6 +491,66 @@ def picture(model) -> dict[str, str]:
     return {field: " ".join(sorted(found)) for field, found in fields.items()}
 
 
+MACRO = {
+    "id": "dock",
+    "label": "Dock",
+    "type": "macro",
+    "steps": [{"keys": "KeyN+AltLeft", "wait": 500}, {"keys": "Enter", "hold": 200}],
+}
+
+
+def test_a_macro_is_a_button_with_steps(tmp_path):
+    panel = Panel.model_validate(MINIMAL | {"buttons": [MACRO], "window": "X4.exe"})
+    button = panel.buttons[0]
+    assert [step.keys for step in button.steps] == ["AltLeft+KeyN", "Enter"]  # modifiers first
+    assert (button.keys, button.duration_ms(), panel.macros()) == (None, 700, 1)
+    assert button.keys_label() == "Alt+N, Enter"
+
+    # The file has the steps and nothing a step does not need; the phone gets no keys.
+    written = json.loads(panel_text(panel))
+    assert written["format"] == 2
+    assert written["buttons"] == [
+        {
+            "id": "dock",
+            "label": "Dock",
+            "type": "macro",
+            "steps": [{"keys": "AltLeft+KeyN", "wait": 500}, {"keys": "Enter", "hold": 200}],
+        }
+    ]
+    assert "steps" not in json.loads(panel_text(Panel.model_validate(MINIMAL)))["buttons"][0]
+    store = PanelStore(tmp_path / "panels")
+    write_panel(store.root, "x4", written)
+    store.load()
+    shown = store.panels["x4"].public()["buttons"][0]
+    assert shown["type"] == "macro" and "steps" not in shown and "keys" not in shown
+
+    # A set written by hand has to say that it is of the format with macros:
+    # the program before them takes silence for format 1.
+    for silent in ({}, {"format": 1}):
+        by_hand = {key: value for key, value in written.items() if key != "format"} | silent
+        with pytest.raises(ValueError, match='panel.json: a panel with a macro says "format": 2'):
+            read_set(write_set(tmp_path / f"by-hand-{len(silent)}", by_hand))
+    assert read_set(write_set(tmp_path / "said", written)).panel.macros() == 1
+
+
+def test_a_set_with_macros_is_imported_only_when_they_are_welcome(tmp_path):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        text = panel_text(Panel.model_validate(MINIMAL | {"buttons": [MACRO], "window": "X4.exe"}))
+        archive.writestr("panel.json", text)
+    store = PanelStore(tmp_path / "panels")
+    store.root.mkdir()
+    store.load()
+    with pytest.raises(HasMacros) as asked:
+        store.import_set(out.getvalue(), "en", macros=False)
+    assert (asked.value.count, asked.value.window) == (1, "X4.exe")
+    assert list(store.root.iterdir()) == [] and not store.reload_if_changed()
+    # Who says nothing about macros does not get them.
+    with pytest.raises(HasMacros):
+        store.import_set(out.getvalue(), "en")
+    assert store.import_set(out.getvalue(), "en", macros=True) == "x4"
+
+
 def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
     """This test fails when a file of a set may hold something new: a field, a
     kind of button, a longer label, one more column. The program before the
@@ -476,7 +561,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
     After that write the new picture of the files here. (Toggles came in 0.6.0 without it, and 0.5.0
     answers them with "buttons.0.type: Input should be".)"""
     image = r"pattern=^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
-    assert FORMAT == 1
+    assert FORMAT == 2
     assert picture(Panel) == {
         "Button": "",
         "Button.color": "pattern=^#[0-9a-fA-F]{6}$",
@@ -486,12 +571,17 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "Button.label": "maxLength=40",
         "Button.on": "",
         "Button.screen": "exclusiveMaximum=8 minimum=0",
-        "Button.type": "enum=['tap', 'hold', 'toggle']",
+        "Button.steps": "maxItems=20",
+        "Button.type": "enum=['tap', 'hold', 'toggle', 'macro']",
+        "Step": "",
+        "Step.hold": "maximum=5000 minimum=1",
+        "Step.keys": "",
+        "Step.wait": "maximum=5000 minimum=0",
         "background": image,
         "buttons": "maxItems=200",
         "columns": "maximum=8 minimum=1",
         "cover": image,
-        "format": "const=1",
+        "format": "enum=[1, 2]",
         "language": "pattern=^[a-z]{2}$",
         "name": "maxLength=60 minLength=1",
         "screens": "maxItems=8 maxLength=24 minLength=1",

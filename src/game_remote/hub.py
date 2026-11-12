@@ -19,6 +19,9 @@ Protocol (JSON over WebSocket):
     phone -> PC   {"type": "flip", "id": 9, "panel": "x4", "button": "lights"}
     PC -> phone   {"type": "lit", "panel": "x4", "button": "lights", "on": true}
     PC -> phone   {"type": "active", "panels": ["x4"]}       another window is active
+    PC -> phone   {"type": "stopped", "panel": "x4", "button": "dock", "reason": "not_focused"}
+    phone -> PC   {"type": "stop", "id": 9, "panel": "x4", "button": "dock"}   end this macro
+    phone -> PC   {"type": "stop"}                           end the macros I started
 
 "language" is the interface language chosen on the PC; null means that the
 phone uses the language of its own browser.
@@ -42,6 +45,16 @@ PC, so that a phone opens the game the player switched to. "welcome" carries
 the list for a phone that connects, or null when the PC cannot tell at that
 moment. After that a phone is sent "active" whenever the list is not the one
 it was told last, and nothing while it is the same.
+
+A macro button presses the keys of its steps one after another. "down" starts
+the macro; on a macro that runs it changes nothing. "stop" with the button
+ends it, from any phone, and is answered with "ack": a phone says which of the
+two the player meant, by whether the button was lit when it was touched. A
+macro runs only in a panel that is bound to a window and while that window is
+active. It ends when the phone that started it goes away, or says "stop"
+without a button: a phone does when its page is hidden. While a macro runs the
+button is lit on every phone: "lit" says so. When the PC ends a macro before
+its last step, the phone that started it is told why with "stopped".
 """
 
 from __future__ import annotations
@@ -88,6 +101,18 @@ class Connection:
     active: list[str] | None = None
 
 
+@dataclass
+class Macro:
+    """A macro that runs."""
+
+    conn: Connection
+    # The program whose window has to stay active while it runs.
+    window: str
+    task: asyncio.Task | None = None
+    # Why the PC stops it; None: the player did, or it came to its end.
+    reason: str | None = None
+
+
 def _is_window_of(info: ForegroundInfo, window: str) -> bool:
     """True when the active window belongs to the program a panel is bound to."""
     return (info.exe_name or "").lower() == window.lower()
@@ -119,6 +144,8 @@ class RemoteHub:
         self.lit: dict[tuple[str, str], tuple[bool, bool]] = {}
         self._ids = itertools.count(1)
         self._taps: set[asyncio.Task] = set()
+        # The macros that run, by (panel, button).
+        self.macros: dict[tuple[str, str], Macro] = {}
         # Process that owned the active window when the last key was held down.
         self._held_pid: int | None = None
 
@@ -198,6 +225,7 @@ class RemoteHub:
 
     def _release_connection(self, conn: Connection) -> None:
         conn.held.clear()
+        self._stop_macros_of(conn)
         try:
             self.controller.release_all(conn.id)
         except InputError:
@@ -236,6 +264,8 @@ class RemoteHub:
             for button in panel["buttons"]:
                 if button["type"] == "toggle":
                     button["on"] = self._is_lit((panel["id"], button["id"]), button["on"])
+                elif button["type"] == "macro":
+                    button["on"] = (panel["id"], button["id"]) in self.macros
         return panels
 
     def _is_lit(self, key: tuple[str, str], start: bool) -> bool:
@@ -312,6 +342,77 @@ class RemoteHub:
                 with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                     await self._send(conn.ws, {"type": "active", "panels": active})
 
+    # -- macros ---------------------------------------------------------------
+
+    def _start_macro(
+        self, conn: Connection, key: tuple[str, str], button: Button, window: str
+    ) -> None:
+        macro = Macro(conn, window)
+        self.macros[key] = macro
+        macro.task = asyncio.create_task(self._run_macro(key, button, macro))
+        # Also when it was stopped before its first line ran.
+        macro.task.add_done_callback(lambda task: self._forget_macro(key, macro))
+
+    def _forget_macro(self, key: tuple[str, str], macro: Macro) -> None:
+        if self.macros.get(key) is macro:
+            del self.macros[key]
+
+    def _stop_macros_of(self, conn: Connection) -> None:
+        for macro in list(self.macros.values()):
+            if macro.conn is conn:
+                self._stop_macro(macro, None)
+
+    def stop_macros(self) -> None:
+        """Ends every macro that runs: "release all keys" on the PC means them too."""
+        for macro in list(self.macros.values()):
+            self._stop_macro(macro, None)
+
+    @staticmethod
+    def _stop_macro(macro: Macro, reason: str | None) -> None:
+        """Ends a macro that runs: its keys go up, and the phones are told."""
+        macro.reason = reason
+        if macro.task is not None:
+            macro.task.cancel()
+
+    async def _run_macro(self, key: tuple[str, str], button: Button, macro: Macro) -> None:
+        lit = {"type": "lit", "panel": key[0], "button": key[1]}
+        reason = None
+        try:
+            await self._broadcast({**lit, "on": True})
+            for step in button.steps:
+                # Looked at before every step: no key goes to another window.
+                reason = self._focus_problem(self.foreground(), macro.window)
+                if reason:
+                    break
+                await self.controller.tap(step.combo, step.hold)
+                await asyncio.sleep(step.wait / 1000)
+        except Exception:
+            # Whatever it is, the macro ends like any other: the button goes
+            # dark on the phones, and the one that started it is told.
+            log.exception("A macro could not go on")
+            reason = "input_error"
+        except asyncio.CancelledError:
+            reason = macro.reason  # whoever stopped it left the reason there
+        self._forget_macro(key, macro)  # before the phones are told: it runs no more
+        await self._broadcast({**lit, "on": False})
+        if reason:
+            log.info("The macro %s of %s was stopped: %s", key[1], key[0], reason)
+        if reason and macro.conn.id in self.connections:
+            stopped = {"type": "stopped", "panel": key[0], "button": key[1], "reason": reason}
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await self._send(macro.conn.ws, stopped)
+
+    def check_macros(self, look: Callable[[], ForegroundInfo | None] | None = None) -> None:
+        """Stops the macros whose window is not the active one any more: a
+        key that a step holds must not stay down in another program."""
+        if not self.macros:
+            return
+        info = (look or self.foreground)()
+        for macro in list(self.macros.values()):
+            reason = self._focus_problem(info, macro.window)
+            if reason:
+                self._stop_macro(macro, reason)
+
     async def watch_focus(self, interval: float = FOCUS_WATCH_SECONDS) -> None:
         while True:
             await asyncio.sleep(interval)
@@ -322,6 +423,7 @@ class RemoteHub:
                 for conn in self.check_focus(look):
                     with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                         await self._send(conn.ws, {"type": "released"})
+                self.check_macros(look)
                 await self.follow_window(look)
             except Exception:
                 log.exception("Could not check the active window")
@@ -342,6 +444,15 @@ class RemoteHub:
             if reason:
                 ack["reason"] = reason
             await self._send(conn.ws, ack)
+        elif kind == "stop":
+            key = (message.get("panel"), message.get("button"))
+            if key == (None, None):
+                self._stop_macros_of(conn)  # the page of the phone was left
+                return
+            if isinstance(key[0], str) and isinstance(key[1], str) and key in self.macros:
+                self._stop_macro(self.macros[key], None)
+            # A macro that came to its end by itself is as good as stopped.
+            await self._send(conn.ws, {"type": "ack", "id": message.get("id"), "ok": True})
         else:
             raise ValueError(f"unknown message type {kind!r}")
 
@@ -375,10 +486,18 @@ class RemoteHub:
             return None
         if key in conn.held:
             return None  # already down; a repeated "down" changes nothing
+        if key in self.macros:
+            return None  # it runs already; the phone that wants it ended says "stop"
 
         info = self.foreground()
         reason = self._focus_problem(info, loaded.panel.window)
-        if reason is None:
+        if button.type == "macro":
+            # A macro presses many keys: only in the window of its game.
+            if not loaded.panel.window:
+                reason = "no_window"
+            if reason is None:
+                self._start_macro(conn, key, button, loaded.panel.window)
+        elif reason is None:
             combo = button.combo
             try:
                 if button.type == "hold":
@@ -401,7 +520,7 @@ class RemoteHub:
                 "phone": conn.device.name,
                 "panel": loaded.panel.name,
                 "button": button.label or button.id,
-                "keys": button.combo.label(),
+                "keys": button.keys_label(),
                 "type": button.type,
                 "ok": reason is None,
                 "reason": reason,

@@ -12,7 +12,7 @@ import pytest
 from conftest import phone_key
 from fastapi.testclient import TestClient
 
-from game_remote.panels import PanelStore
+from game_remote.panels import FORMAT, PanelStore
 from game_remote.server.editor import create_editor_app
 from game_remote.server.remote import create_remote_app
 
@@ -303,10 +303,45 @@ def test_a_set_cannot_write_outside_its_folder(client, state):
 
 def test_a_set_of_a_newer_version_is_refused_with_a_reason_of_its_own(client, state):
     """The page turns it into "update the program", in the user's language."""
-    newer = ELITE | {"format": 2, "buttons": [{"id": "a", "type": "macro"}]}
+    newer = ELITE | {"format": FORMAT + 1, "buttons": [{"id": "a", "type": "hologram"}]}
     reply = client.post("/api/sets", content=zipped({"panel.json": newer}), headers=ZIP)
     assert (reply.status_code, reply.json()) == (422, {"error": "newer_version"})
     assert [p.name for p in state.settings.panels_dir.iterdir()] == ["demo"]
+
+
+def test_a_set_with_macros_asks_before_it_becomes_a_game(client, state):
+    macro = {"id": "dock", "type": "macro", "steps": [{"keys": "KeyN"}, {"keys": "Enter"}]}
+    files = {"panel.json": ELITE | {"format": 2, "window": "Elite.exe", "buttons": [macro]}}
+    files["cover.png"] = PNG
+    asked = client.post("/api/sets", content=zipped(files), headers=ZIP)
+    assert (asked.status_code, asked.json()) == (
+        409,
+        {"error": "macros", "count": 1, "window": "Elite.exe"},
+    )
+    assert [p.name for p in state.settings.panels_dir.iterdir()] == ["demo"]
+    # The question about a game of the same name comes after this one.
+    plain = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
+    client.post("/api/sets", content=zipped(plain), headers=ZIP)
+    assert client.post("/api/sets", content=zipped(files), headers=ZIP).json()["error"] == "macros"
+    again = client.post("/api/sets?macros=allow", content=zipped(files), headers=ZIP)
+    assert again.json()["error"] == "same_name"
+    taken = client.post("/api/sets?macros=allow&same_name=add", content=zipped(files), headers=ZIP)
+    assert taken.status_code == 201
+    button = taken.json()["panels"][-1]["buttons"][0]
+    assert (button["type"], [step["keys"] for step in button["steps"]]) == (
+        "macro",
+        ["KeyN", "Enter"],
+    )
+    assert (
+        client.post("/api/sets?macros=maybe", content=zipped(files), headers=ZIP).status_code == 422
+    )
+
+    # The editor saves a macro the way it saves any button, and the file says its format.
+    panel = taken.json()["panels"][-1]
+    body = {key: value for key, value in panel.items() if key not in ("id", "format", "language")}
+    saved = client.put(f"/api/panels/{panel['id']}", json=body, headers=ORIGIN)
+    assert saved.status_code == 200
+    assert json.loads(panel_file(state, panel["id"]).read_text(encoding="utf-8"))["format"] == 2
 
 
 def test_import_needs_the_editors_origin(client):

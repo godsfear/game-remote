@@ -257,6 +257,14 @@ function onMessage(message) {
     if (panel !== currentPanel()) return;
     const node = [...el.grid.children].find((child) => child.dataset.button === button.id);
     if (node) node.setAttribute('aria-pressed', String(Boolean(button.on)));
+  } else if (message.type === 'stopped') {
+    // The PC ended a macro of this phone before its last step.
+    if (message.panel === currentPanel()?.id) {
+      const node = [...el.grid.children].find((child) => child.dataset.button === message.button);
+      if (node) markRejected(node);
+    }
+    showToast(t(`reason.${message.reason}`));
+    buzz([30, 60, 30]);
   } else if (message.type === 'pong') {
     lastPong = performance.now();
     if (typeof message.t === 'number') delayMs = Math.max(0, Math.round(lastPong - message.t));
@@ -265,15 +273,17 @@ function onMessage(message) {
     const node = waiting.get(message.id);
     waiting.delete(message.id);
     if (!message.ok) {
-      if (node) {
-        node.classList.remove('rejected');
-        void node.offsetWidth; // restart the animation
-        node.classList.add('rejected');
-      }
+      if (node) markRejected(node);
       showToast(t(`reason.${message.reason}`));
       buzz([30, 60, 30]);
     }
   }
+}
+
+function markRejected(node) {
+  node.classList.remove('rejected');
+  void node.offsetWidth; // restart the animation
+  node.classList.add('rejected');
 }
 
 setInterval(() => {
@@ -307,13 +317,15 @@ function press(button, node, pointerId) {
     entry.timer = setTimeout(() => {
       entry.flipped = true;
       tell('flip', button, node);
-      // One long pulse. Two short ones mean a press the PC refused, three
-      // that the PC opened another game.
+      // One long pulse. Two short ones mean a press the PC refused or a macro
+      // it stopped, three that the PC opened another game.
       buzz(80);
     }, FLIP_AFTER_MS);
     return;
   }
-  tell('down', button, node);
+  // A macro that is lit runs: the touch is to end it. The phone says so, and
+  // the PC does not start again a macro that ended a moment before.
+  tell(button.type === 'macro' && button.on ? 'stop' : 'down', button, node);
   buzz(12);
 }
 
@@ -353,6 +365,15 @@ function releaseAll() {
     if (panel) send({ type: 'up', id: nextId++, panel: panel.id, button: buttonId });
   }
   pressed.clear();
+}
+
+// The page is hidden, closed or left: nothing keeps pressing keys for a phone
+// that nobody looks at. Held buttons go up, and the PC ends the macros this
+// phone started. Moving about in the remote itself leaves a macro running.
+function leavePage() {
+  releaseAll();
+  const running = panels.some((game) => game.buttons.some((button) => button.type === 'macro' && button.on));
+  if (running) send({ type: 'stop' });
 }
 
 // Act on touch, not on release, and follow each finger separately so that
@@ -529,7 +550,7 @@ document.addEventListener('visibilitychange', keepAwake);
 
 window.addEventListener('resize', layout);
 document.addEventListener('contextmenu', (event) => event.preventDefault());
-document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) leavePage(); });
 // Back from a locked screen or a lost Wi-Fi: do not wait for the next retry.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
@@ -537,8 +558,8 @@ document.addEventListener('visibilitychange', () => {
   if (silent || (!ws && statusState === 'offline' && (key || pairCode))) reconnect();
 });
 window.addEventListener('online', () => { if (!ws && (key || pairCode)) reconnect(); });
-window.addEventListener('pagehide', releaseAll);
-window.addEventListener('blur', releaseAll);
+window.addEventListener('pagehide', leavePage);
+window.addEventListener('blur', leavePage);
 
 applyTexts();
 render();

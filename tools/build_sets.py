@@ -58,6 +58,10 @@ def build(folder: Path) -> tuple[bytes, PanelSet]:
     unused = sorted(path.name for path in folder.iterdir() if path.name not in files | {NOTES})
     if unused:
         raise ValueError(f"{unused[0]}: the set does not use this file")
+    if panel_set.panel.macros() and not panel_set.panel.window:
+        # A macro runs only in the window of its game, and whoever imports the
+        # set is shown that window.
+        raise ValueError(f'{PANEL_FILE}: a set with macros says the "window" of its game')
 
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -73,7 +77,7 @@ def build(folder: Path) -> tuple[bytes, PanelSet]:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporary:
         store = PanelStore(Path(temporary))
         for language in (panel_set.panel.language, *panel_set.translations):
-            store.import_set(data, language)
+            store.import_set(data, language, macros=True)  # the catalogue is read by people
     return data, panel_set
 
 
@@ -81,7 +85,11 @@ def needs(panel: Panel) -> str | None:
     """The first version of the program that reads the set, when not every
     version does. An older one answers such a set with an error nobody
     understands, so the page of sets says it."""
-    # Toggle buttons came with 0.6.0.
+    # Format 2, the one with macros, came with 0.8.0: the program writes that
+    # number into every set it exports, with macros or without. Toggle buttons
+    # came with 0.6.0.
+    if panel.format >= 2 or panel.macros():
+        return "0.8.0"
     return "0.6.0" if any(button.type == "toggle" for button in panel.buttons) else None
 
 

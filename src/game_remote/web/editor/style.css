@@ -104,6 +104,19 @@ summary { cursor: pointer; }
 #button-list .move button { padding: 2px 8px; font-size: 14px; }
 #button-list .move button:disabled { opacity: 0.3; cursor: default; border-color: var(--line); }
 
+#step-list { display: grid; gap: 6px; margin: 10px 0; padding: 0; list-style: none; counter-reset: step; }
+#step-list li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px 6px 10px; background: var(--raised); border: 1px solid transparent; border-radius: 9px; cursor: pointer; counter-increment: step; }
+#step-list li::before { content: counter(step) "."; color: var(--muted); }
+#step-list li[aria-current="true"] { border-color: var(--accent); background: #26304a; }
+#step-list .keys { flex: 1 1 calc(100% - 190px); min-width: 90px; font-weight: 600; }
+#step-list .keys.missing { color: #ffcf7a; font-weight: 400; }
+/* The keys and the arrows of a step stand in its first line, its two numbers below. */
+#step-list label { order: 2; flex: 1 1 40%; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+#step-list input { width: 76px; padding: 5px 7px; font: inherit; font-size: 15px; background: #262b38; border: 1px solid var(--line); border-radius: 7px; }
+#step-list input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+#step-list button { order: 1; padding: 4px 9px; }
+#steps-field { margin-bottom: 12px; }
+.hint.warning { color: #ffcf7a; }
 #combo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #combo { flex: 1; min-width: 120px; padding: 9px 12px; border-radius: 9px; background: #171a22; border: 1px dashed var(--line); font-weight: 600; }
 #combo.missing { color: #ffcf7a; font-weight: 400; }

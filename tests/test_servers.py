@@ -107,6 +107,14 @@ def test_release_keys_from_the_editor(state):
     assert state.backend.trace() == ["+KeyW", "-KeyW"]
 
 
+def test_release_keys_ends_the_macros_too(state, monkeypatch):
+    """A macro that runs would press its next keys a moment after the release."""
+    stopped = []
+    monkeypatch.setattr(state.hub, "stop_macros", lambda: stopped.append("all"))
+    resp = editor_client(state).post("/api/release-keys", headers={"origin": EDITOR})
+    assert resp.json() == {"ok": True} and stopped == ["all"]
+
+
 def test_release_keys_when_windows_refuses(state, monkeypatch):
     remote = TestClient(create_remote_app(state), client=("192.168.1.50", 50000))
     editor = editor_client(state)

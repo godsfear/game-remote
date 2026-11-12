@@ -453,3 +453,204 @@ def test_panel_images_are_served_only_from_the_panel(state, tmp_path):
     assert http.get("/panel-files/demo/panel.json").status_code == 404
     assert http.get("/panel-files/demo/..%2F..%2Fgame-remote.sqlite3").status_code == 404
     assert http.get("/panel-files/nope/map.png").status_code == 404
+
+
+# -- macros -------------------------------------------------------------------
+
+
+def add_macro(state, tmp_path, steps, **panel_fields):
+    """The demo panel is bound to X4.exe and gets the macro "dock"."""
+    panel = tmp_path / "panels" / "demo" / "panel.json"
+    data = json.loads(panel.read_text(encoding="utf-8"))
+    data["buttons"] = [button for button in data["buttons"] if button["id"] != "dock"]
+    data["buttons"].append({"id": "dock", "label": "Dock", "type": "macro", "steps": steps})
+    fields = {"format": 2, "window": "X4.exe"} | panel_fields
+    panel.write_text(json.dumps({**data, **fields}), encoding="utf-8")
+    state.store.load()
+
+
+def read_until(ws, last):
+    """The messages of the PC up to the one that ``last`` names."""
+    heard = []
+    while not heard or not last.items() <= heard[-1].items():
+        heard.append(ws.receive_json())
+    return heard
+
+
+def test_a_macro_presses_the_keys_of_its_steps_one_after_another(state, tmp_path):
+    add_macro(
+        state, tmp_path, [{"keys": "AltLeft+KeyN", "wait": 30}, {"keys": "Enter", "hold": 20}]
+    )
+    with connect(state) as ws, connect(state, ("192.168.1.51", 50001)) as second:
+        assert "KeyN" not in json.dumps(hello(ws, state))  # the steps stay on the PC
+        hello(second, state)
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "dock"})
+        heard = read_until(ws, lit("dock", False))
+        # The press is taken, and the button is lit on every phone while the macro runs.
+        assert heard == [
+            {"type": "ack", "id": 1, "ok": True},
+            lit("dock", True),
+            lit("dock", False),
+        ]
+        assert read_until(second, lit("dock", False)) == [lit("dock", True), lit("dock", False)]
+    assert trace(state) == ["+AltLeft", "+KeyN", "-KeyN", "-AltLeft", "+Enter", "-Enter"]
+    assert state.hub.macros == {}
+    assert state.hub.recent[0]["keys"] == "Alt+N, Enter"
+
+
+def test_a_second_touch_stops_a_macro(state, tmp_path):
+    add_macro(state, tmp_path, [{"keys": "KeyW", "hold": 4000}, {"keys": "KeyE"}])
+    with connect(state) as ws:
+        hello(ws, state)
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "dock"})
+        read_until(ws, lit("dock", True))
+        wait_for(lambda: state.controller.held_keys == {"KeyW"})
+        # A phone that connects now sees the button lit.
+        dock = next(b for b in state.hub.panels()[0]["buttons"] if b["id"] == "dock")
+        assert dock["on"] is True
+        # A press of a macro that runs changes nothing: it was meant to start it.
+        assert press(ws, "down", "dock", message_id=2) == {"type": "ack", "id": 2, "ok": True}
+        assert ("demo", "dock") in state.hub.macros and state.controller.held_keys == {"KeyW"}
+        # The phone saw the button lit when it was touched, and says "stop".
+        ws.send_json({"type": "stop", "id": 3, "panel": "demo", "button": "dock"})
+        heard = read_until(ws, lit("dock", False))
+        # The player stopped it: there is no reason to tell.
+        assert heard == [{"type": "ack", "id": 3, "ok": True}, lit("dock", False)]
+        # A macro that is over is not started by a late "stop", and there is none to end.
+        assert press(ws, "stop", "dock", message_id=4) == {"type": "ack", "id": 4, "ok": True}
+        assert press(ws, "stop", "nothing", message_id=5) == {"type": "ack", "id": 5, "ok": True}
+        assert press(ws, "flip", "dock", message_id=6)["reason"] == "unknown_button"
+    assert trace(state) == ["+KeyW", "-KeyW"]  # the second step was never pressed
+    assert state.hub.macros == {}
+
+
+def test_a_macro_runs_only_in_the_window_of_its_game(state, tmp_path):
+    steps = [{"keys": "KeyW", "wait": 300}, {"keys": "KeyE"}]
+    add_macro(state, tmp_path, steps, window=None)
+    with connect(state) as ws:
+        hello(ws, state)
+        # A game without a window: a macro could press its keys anywhere.
+        assert press(ws, "down", "dock")["reason"] == "no_window"
+        add_macro(state, tmp_path, steps)
+        state.hub.foreground = foreground("chrome.exe")
+        assert press(ws, "down", "dock", message_id=2)["reason"] == "not_focused"
+        assert trace(state) == [] and state.hub.macros == {}
+
+        # The window is left in the middle of the macro: the next step is not pressed,
+        # and the phone that started the macro learns why.
+        state.hub.foreground = foreground("x4.EXE")
+        ws.send_json({"type": "down", "id": 3, "panel": "demo", "button": "dock"})
+        read_until(ws, lit("dock", True))
+        wait_for(lambda: trace(state) == ["+KeyW", "-KeyW"])
+        state.hub.foreground = foreground("chrome.exe")
+        heard = read_until(ws, {"type": "stopped"})
+        assert heard == [
+            lit("dock", False),
+            {"type": "stopped", "panel": "demo", "button": "dock", "reason": "not_focused"},
+        ]
+    assert trace(state) == ["+KeyW", "-KeyW"]
+
+
+def test_a_macro_ends_when_its_phone_goes_away(state, tmp_path):
+    add_macro(state, tmp_path, [{"keys": "KeyW", "hold": 4000}, {"keys": "KeyE"}])
+    with connect(state) as ws:
+        hello(ws, state)
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "dock"})
+        read_until(ws, lit("dock", True))
+        wait_for(lambda: state.controller.held_keys == {"KeyW"})
+    wait_for(lambda: state.controller.held_keys == set() and state.hub.macros == {})
+    assert trace(state) == ["+KeyW", "-KeyW"]
+
+
+def test_the_watcher_stops_a_macro_whose_window_is_left(state, tmp_path):
+    """Between two steps the macro looks itself; a key that a step holds is the
+    watcher's to let go."""
+    add_macro(state, tmp_path, [{"keys": "KeyW", "hold": 4000}, {"keys": "KeyE"}])
+    hub = state.hub
+    key, button = ("demo", "dock"), state.store.get("demo").panel.button("dock")
+    conn = SimpleNamespace(id="phone", ws="phone", held={}, active=[])
+    hub.connections = {"phone": conn}
+    heard = []
+
+    async def send(ws, message):
+        heard.append(message)
+
+    hub._send = send
+
+    async def scenario():
+        hub.foreground = foreground("x4.exe")
+        hub._start_macro(conn, key, button, "X4.exe")
+        await asyncio.sleep(0.05)
+        assert state.controller.held_keys == {"KeyW"}
+        hub.check_macros()  # still in the game: nothing happens
+        await asyncio.sleep(0.01)
+        assert state.controller.held_keys == {"KeyW"}
+        hub.foreground = foreground("chrome.exe")
+        hub.check_macros()
+        await asyncio.sleep(0.01)
+        assert state.controller.held_keys == set() and hub.macros == {}
+        before = list(heard)
+        # A macro that is stopped before its first line ran leaves nothing behind.
+        hub.foreground = foreground("x4.exe")
+        hub._start_macro(conn, key, button, "X4.exe")
+        hub._stop_macro(hub.macros[key], None)
+        await asyncio.sleep(0.01)
+        assert hub.macros == {}
+        # "Release all keys" on the PC ends every macro, whoever started it.
+        del heard[:]
+        hub._start_macro(conn, key, button, "X4.exe")
+        await asyncio.sleep(0.05)
+        assert state.controller.held_keys == {"KeyW"}
+        hub.stop_macros()
+        await asyncio.sleep(0.01)
+        assert state.controller.held_keys == set() and hub.macros == {}
+        assert heard == [lit("dock", True), lit("dock", False)]  # nobody is told a reason
+        heard[:] = before
+
+    asyncio.run(scenario())
+    assert heard == [
+        lit("dock", True),
+        lit("dock", False),
+        {"type": "stopped", "panel": "demo", "button": "dock", "reason": "not_focused"},
+    ]
+    assert trace(state) == ["+KeyW", "-KeyW"] * 2
+
+
+def test_a_phone_ends_the_macros_it_started(state, tmp_path):
+    """Its page was hidden: nothing keeps pressing keys for it."""
+    add_macro(state, tmp_path, [{"keys": "KeyW", "hold": 4000}, {"keys": "KeyE"}])
+    with connect(state) as ws, connect(state, ("192.168.1.51", 50001)) as other:
+        hello(ws, state)
+        hello(other, state)
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "dock"})
+        read_until(ws, lit("dock", True))
+        wait_for(lambda: state.controller.held_keys == {"KeyW"})
+        # Another phone has no macro of its own to end.
+        other.send_json({"type": "stop"})
+        assert press(other, "down", "map") == lit("dock", True)  # it only heard the news
+        assert state.controller.held_keys >= {"KeyW"}
+        ws.send_json({"type": "stop"})
+        assert read_until(ws, lit("dock", False)) == [lit("dock", False)]
+    assert "+KeyE" not in trace(state) and state.hub.macros == {}
+
+
+def test_a_macro_that_breaks_ends_like_any_other(state, tmp_path):
+    add_macro(state, tmp_path, [{"keys": "KeyW"}, {"keys": "KeyE"}])
+
+    looks = []
+
+    def look():
+        looks.append("look")
+        if len(looks) > 1:  # the press itself looks once and finds nothing wrong
+            raise OSError("the window could not be asked about")
+
+    with connect(state) as ws:
+        hello(ws, state)
+        state.hub.foreground = look
+        ws.send_json({"type": "down", "id": 1, "panel": "demo", "button": "dock"})
+        heard = read_until(ws, {"type": "stopped"})
+    assert heard[-2:] == [
+        lit("dock", False),
+        {"type": "stopped", "panel": "demo", "button": "dock", "reason": "input_error"},
+    ]
+    assert trace(state) == [] and state.hub.macros == {}

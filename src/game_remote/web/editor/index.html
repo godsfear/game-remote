@@ -127,6 +127,12 @@
           <input id="button-label" type="text" maxlength="40" autocomplete="off">
         </label>
         <div class="field"><span data-i18n="editor.keys"></span>
+          <div id="steps-field" hidden>
+            <p class="hint" data-i18n="editor.stepsHint"></p>
+            <ol id="step-list"></ol>
+            <button id="add-step" type="button" data-i18n="editor.addStep"></button>
+            <p class="hint warning" id="macro-window-hint" data-i18n="editor.macroNeedsWindow" hidden></p>
+          </div>
           <div id="combo-row">
             <output id="combo"></output>
             <button id="record" type="button" data-i18n="editor.record"></button>
@@ -148,6 +154,7 @@
             <button type="button" data-type="tap" data-i18n="editor.typeTap"></button>
             <button type="button" data-type="hold" data-i18n="editor.typeHold"></button>
             <button type="button" data-type="toggle" data-i18n="editor.typeToggle"></button>
+            <button type="button" data-type="macro" data-i18n="editor.typeMacro"></button>
           </div>
           <p class="hint" id="type-hint"></p>
           <label id="toggle-on-field" hidden><input id="toggle-on" type="checkbox"> <span data-i18n="editor.toggleOn"></span></label>
@@ -222,6 +229,16 @@
     </form>
   </dialog>
   <!-- Asks the language of the labels before a game is exported as a set. -->
+  <dialog id="macros-dialog">
+    <form method="dialog">
+      <p id="macros-text"></p>
+      <div class="row">
+        <button id="macros-allow" value="allow" data-i18n="editor.macrosAllow"></button>
+        <button value="cancel" class="quiet" data-i18n="editor.cancel"></button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="export-dialog">
     <form method="dialog">
       <label class="field"><span data-i18n="editor.exportLanguage"></span>
