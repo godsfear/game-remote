@@ -1,14 +1,22 @@
 # Изменения / Changelog
 
-## Не выпущено / Unreleased
+## 0.5.0
+
+Программа сама сообщает о новой версии.
 
 - Редактор сообщает, что вышла новая версия, и даёт ссылку на неё. Для этого программа через минуту после запуска и затем раз в сутки спрашивает у GitHub номер последнего выпуска; сама ничего не скачивает. Если GitHub не ответил, она спросит ещё раз через час, а дальше всё реже. Проверка отключается галочкой «Проверять новую версию на GitHub» внизу страницы на ПК; если снять её в первую минуту, не уйдёт ни одного запроса.
 - Настройки сохраняются и тогда, когда их файл в этот момент читает другая программа, например антивирус: раньше смена языка в таком случае заканчивалась ошибкой.
-- Руководство переведено на английский: [docs/guide.en.md](docs/guide.en.md).
+- Руководство переведено на английский: [docs/guide.en.md](https://github.com/godsfear/game-remote/blob/main/docs/guide.en.md).
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Об этой версии прежние ещё не сообщают; о следующих редактор скажет сам.
+
+The program tells about a new version by itself.
 
 - The editor tells that a newer version is out and links to it. For that the program asks GitHub for the number of the latest release a minute after its start and then once a day; it downloads nothing by itself. When GitHub does not answer, it asks again in an hour, and then less and less often. The box "Check GitHub for a new version" at the bottom of the page on the PC turns the check off; cleared within the first minute, it stops every request.
 - Settings are saved also while another program, an antivirus for one, reads their file at that moment: a change of the language used to end in an error then.
-- The guide is in English too: [docs/guide.en.md](docs/guide.en.md).
+- The guide is in English too: [docs/guide.en.md](https://github.com/godsfear/game-remote/blob/main/docs/guide.en.md).
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. The versions before this one do not tell about it yet; the editor will tell about the next ones.
 
 ## 0.4.0
 
