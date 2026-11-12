@@ -1,16 +1,24 @@
 # Изменения / Changelog
 
-## Не выпущено / Unreleased
+## 0.6.0
+
+Кнопки-переключатели: кнопка показывает, включено или выключено то, что она переключает.
 
 - Новый вид кнопки, «Переключатель»: нажимает клавишу как обычная и после этого светится до следующего нажатия. Подходит для того, что в игре включается и выключается: фары, шасси, режимы полёта. В редакторе задаётся, светится ли кнопка с самого начала. Подсветку помнит ПК: она одинакова на всех телефонах и сбрасывается при перезапуске программы.
 - Программа не видит игру и считает только свои нажатия. Если подсветка разошлась с игрой, подержите палец на кнопке около секунды: подсветка сменится, клавиша не нажмётся.
 - В наборе Star Citizen переключателями стали «Шасси», «Фары», «VTOL», «Круиз-контроль» и «Coupled». Панель, которая уже стоит на ПК, не меняется: импортируйте `star-citizen.zip` со страницы наборов и выберите «Заменить». Набор с переключателями открывается только этой версией и новее.
 - Метки кнопок видны и поверх картинок: кружок у кнопок «держать», рамка нажатой и отклонённой кнопки, рамка выбранной кнопки в предпросмотре редактора. Раньше картинка их закрывала.
 
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версия 0.5.0 сообщит об этом выпуске сама, строкой вверху страницы на ПК.
+
+Toggle buttons: a button shows whether what it switches is on or off.
+
 - A new kind of button, "Toggle": it presses its key like a plain one and is lit after that until the next press. It suits what a game switches on and off: lights, landing gear, flight modes. The editor sets whether the button is lit from the start. The PC remembers the light: it is the same on every phone and is reset when the program is started again.
 - The program does not see the game and counts only its own presses. When the light and the game go apart, keep the finger on the button for about a second: the light changes, no key is pressed.
 - In the Star Citizen set "Landing gear", "Lights", "VTOL", "Cruise control" and "Coupled" are toggles now. A panel that is already on the PC is not changed: import `star-citizen.zip` from the page of sets and choose "Replace". A set with toggles is read by this version and newer ones only.
 - The marks of a button show on top of its picture too: the ring of a hold button, the frame of a pressed and of a rejected button, the frame of the selected button in the preview of the editor. The picture used to cover them.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Version 0.5.0 tells about this release by itself, in a line at the top of the page on the PC.
 
 ## 0.5.0
 
