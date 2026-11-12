@@ -1,5 +1,23 @@
 # Изменения / Changelog
 
+## 0.7.0
+
+Телефон сам открывает панель игры, в окно которой вы переключились на ПК.
+
+- Когда на ПК активным становится окно игры, к которой привязана панель, телефон открывает эту панель сам. Он отзывается тремя короткими вибрациями и долю секунды не принимает касания, чтобы палец не нажал кнопку новой панели по ошибке. Телефон, который взяли в руки уже во время игры, открывает её панель сразу. Для этого у игры должно быть задано окно: «Выбрать окно» в настройках игры в редакторе.
+- Другую игру на телефоне по-прежнему можно выбрать вручную: она остаётся на экране, пока вы не уйдёте из окна игры и не вернётесь в него.
+- Набор, сделанный для более новой версии Game Remote, редактор не импортирует и прямо просит обновить программу. Раньше в таком случае он показывал ошибку проверки файла, из которой этого было не понять. Сообщение появится, когда у наборов сменится формат; версии до 0.6.0 включительно его не знают.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии 0.5.0 и 0.6.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+The phone opens the panel of the game whose window you switched to on the PC.
+
+- When the window of a game that a panel is bound to becomes active on the PC, the phone opens that panel by itself. It answers with three short pulses and takes no touches for a fraction of a second, so that a finger does not press a button of the new panel by mistake. A phone that is taken in hand when the game is running already opens its panel at once. The game needs its window set for that: "Choose a window" in the settings of the game in the editor.
+- Another game can still be chosen on the phone by hand: it stays on the screen until you leave the window of the game and come back to it.
+- A set made for a newer version of Game Remote is not imported: the editor says plainly that the program has to be updated. It used to show an error of the file check, which did not tell that. The message will show once the format of sets changes; the versions up to 0.6.0 do not know it.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions 0.5.0 and 0.6.0 tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.6.0
 
 Кнопки-переключатели: кнопка показывает, включено или выключено то, что она переключает.
