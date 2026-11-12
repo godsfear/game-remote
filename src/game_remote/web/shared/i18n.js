@@ -136,6 +136,9 @@ const TEXTS = {
     'editor.imageError': 'This file is not a picture the program can read. Use PNG, JPEG or WebP.',
     'editor.language': 'Language',
     'editor.languageAuto': 'Auto: as in the browser',
+    'editor.checkUpdates': 'Check GitHub for a new version',
+    'editor.update': 'Game Remote {version} is out.',
+    'editor.updateGet': 'Download',
   },
   ru: {
     'remote.scan': 'Отсканируйте QR-код на экране ПК, чтобы подключить это устройство.',
@@ -272,6 +275,9 @@ const TEXTS = {
     'editor.imageError': 'Этот файл не удалось прочитать как картинку. Подойдут PNG, JPEG и WebP.',
     'editor.language': 'Язык',
     'editor.languageAuto': 'Авто: как в браузере',
+    'editor.checkUpdates': 'Проверять новую версию на GitHub',
+    'editor.update': 'Вышел Game Remote {version}.',
+    'editor.updateGet': 'Скачать',
   },
 };
 

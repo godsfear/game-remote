@@ -1,5 +1,15 @@
 # Изменения / Changelog
 
+## Не выпущено / Unreleased
+
+- Редактор сообщает, что вышла новая версия, и даёт ссылку на неё. Для этого программа через минуту после запуска и затем раз в сутки спрашивает у GitHub номер последнего выпуска; сама ничего не скачивает. Если GitHub не ответил, она спросит ещё раз через час, а дальше всё реже. Проверка отключается галочкой «Проверять новую версию на GitHub» внизу страницы на ПК; если снять её в первую минуту, не уйдёт ни одного запроса.
+- Настройки сохраняются и тогда, когда их файл в этот момент читает другая программа, например антивирус: раньше смена языка в таком случае заканчивалась ошибкой.
+- Руководство переведено на английский: [docs/guide.en.md](docs/guide.en.md).
+
+- The editor tells that a newer version is out and links to it. For that the program asks GitHub for the number of the latest release a minute after its start and then once a day; it downloads nothing by itself. When GitHub does not answer, it asks again in an hour, and then less and less often. The box "Check GitHub for a new version" at the bottom of the page on the PC turns the check off; cleared within the first minute, it stops every request.
+- Settings are saved also while another program, an antivirus for one, reads their file at that moment: a change of the language used to end in an error then.
+- The guide is in English too: [docs/guide.en.md](docs/guide.en.md).
+
 ## 0.4.0
 
 Каталог наборов: готовые наборы скачиваются с GitHub, а набор обновляется заменой.

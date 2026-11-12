@@ -39,6 +39,7 @@ Game Remote превращает телефон или планшет в пул�
 - Игры с античитом, который отбрасывает программный ввод, нажатия не видят. Так ведёт себя Undecember. Обходить такую защиту Game Remote не будет.
 - Если игра запущена от администратора, Game Remote тоже нужно запустить от администратора.
 - Связь между телефоном и ПК не шифруется, и пульт отвечает только устройствам домашней сети. Не пользуйтесь программой в чужой или общественной Wi-Fi.
+- Через минуту после запуска и затем раз в сутки программа спрашивает у GitHub номер последней версии и сообщает в редакторе, если вышла новая. Если GitHub не ответил, она спросит ещё раз через час, а дальше всё реже. Больше она в интернет не обращается; сама ничего не скачивает. Проверка отключается галочкой внизу страницы на ПК; если снять её в первую минуту, не уйдёт ни одного запроса.
 
 Как устроена программа и почему: [концепт](CONCEPT.md), [план разработки](PLAN.md), [список изменений](CHANGELOG.md).
 
@@ -76,6 +77,7 @@ Details are in the [guide](docs/guide.en.md).
 - Games whose anti-cheat drops synthetic input do not see the presses. Undecember is one. Game Remote will not work around such protection.
 - If the game runs as administrator, Game Remote must run as administrator too.
 - Traffic between the phone and the PC is not encrypted, and the remote answers only devices of the home network. Do not use the program on someone else's or public Wi-Fi.
+- A minute after its start and then once a day the program asks GitHub for the number of the latest version, and the editor tells when a newer one is out. When GitHub does not answer, it asks again in an hour, and then less and less often. It sends nothing else to the internet and downloads nothing by itself. The box at the bottom of the page on the PC turns the check off; cleared within the first minute, it stops every request.
 
 Design notes, in Russian: [concept](CONCEPT.md), [plan](PLAN.md). [Changelog](CHANGELOG.md).
 

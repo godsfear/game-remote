@@ -26,7 +26,7 @@ const el = Object.fromEntries([
   'window-hint', 'add-screen', 'screen-tabs', 'screen-row', 'screen-name', 'delete-screen',
   'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
   'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
-  'same-dialog', 'same-text',
+  'same-dialog', 'same-text', 'update', 'update-text', 'check-updates',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -57,6 +57,7 @@ let elevatedWindow = null; // id of the game that was just bound to an elevated 
 let capture = null; // { down: Set, all: [] } while a combo is being recorded
 let saveTimer = 0;
 let saving = null; // the save that runs now, as a promise
+let savingCheck = false; // the box of the update check is being saved
 const dirty = new Set(); // ids of panels with changes not yet on the PC
 
 const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
@@ -952,6 +953,10 @@ function renderStatus(status) {
   el.offline.hidden = true;
   el.fake.hidden = !status.fake_input;
   el.version.textContent = `Game Remote ${status.version}`;
+  el.update.hidden = !status.update;
+  el['update-text'].textContent = status.update ? t('editor.update', { version: status.update }) : '';
+  // The box follows the PC: the setting may have been changed in another window.
+  if (!savingCheck) el['check-updates'].checked = status.check_updates;
   phones = status.phones;
   devices = status.devices;
   renderConnect();
@@ -1070,6 +1075,19 @@ el.language.addEventListener('change', report(async () => {
   const saved = await api('/api/settings', { method: 'PUT', body: { language: el.language.value } });
   useLanguage(saved.language);
 }));
+el['check-updates'].addEventListener('change', report(async () => {
+  const body = { check_updates: el['check-updates'].checked };
+  savingCheck = true; // an answer of the PC from before the click does not undo it
+  try {
+    el['check-updates'].checked = (await api('/api/settings', { method: 'PUT', body })).check_updates;
+  } catch (error) {
+    el['check-updates'].checked = !body.check_updates; // not saved: the box shows what the PC has
+    throw error;
+  } finally {
+    savingCheck = false;
+  }
+  refresh();
+}));
 el['window-choose'].addEventListener('click', report(chooseWindow));
 el['window-remove'].addEventListener('click', () => setWindow(null));
 el['copy-link'].addEventListener('click', report(copyLink));
@@ -1110,6 +1128,7 @@ async function start() {
     const chosen = await api('/api/settings');
     setLanguage(chosen.language);
     el.language.value = chosen.language;
+    el['check-updates'].checked = chosen.check_updates;
   } catch { /* keep the browser's language */ }
   applyTexts();
   buildColors();

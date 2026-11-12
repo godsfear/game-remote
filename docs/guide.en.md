@@ -79,6 +79,8 @@ A game can have a cover: it shows in the list of games on the phone. "Background
 
 There is nothing to save: changes are written by themselves, and a panel that is open on a phone updates at once. A deleted game is not erased, it is moved to `%LOCALAPPDATA%\GameRemote\trash`.
 
+When a new version is out, the line "Game Remote … is out" appears at the top of the page with a link to the page of the release: download the new `GameRemote.exe` there and start it in place of the old one. The program itself downloads nothing. To learn about the version, it asks GitHub for the number of the latest release a minute after its start and then once a day; this is the only request it sends to the internet, and it says nothing about you or your PC but the network address any site sees. When GitHub does not answer, it asks again in an hour, and then less and less often. The box "Check GitHub for a new version" at the bottom of the page turns the check off. The first request waits a minute for this reason: clear the box right after the first start, and the program never asks GitHub.
+
 To quit: the tray icon → "Quit", or the button "Quit Game Remote" at the bottom of the page on the PC. Starting the exe again opens the page of the program that is already running.
 
 When the game runs as administrator, Game Remote must run as administrator too (right click → "Run as administrator"). Otherwise Windows drops the presses, and the phone says why. Such programs are marked "runs as administrator" in the list of windows.

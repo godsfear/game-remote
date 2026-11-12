@@ -3,13 +3,13 @@ whether uvicorn itself is able to speak WebSocket."""
 
 import importlib.util
 import json
-import socket
 import threading
 import time
 from pathlib import Path
 
 import pytest
 import uvicorn
+from conftest import free_port
 from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
@@ -20,12 +20,6 @@ spec = importlib.util.spec_from_file_location(
 )
 input_check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(input_check)
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 @pytest.fixture

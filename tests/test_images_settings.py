@@ -162,7 +162,7 @@ def test_editor_serves_only_pictures_from_the_panel_folder(client, state):
 
 
 def test_language_is_auto_by_default(client, state):
-    assert client.get("/api/settings").json() == {"language": "auto"}
+    assert client.get("/api/settings").json() == {"language": "auto", "check_updates": True}
     assert state.hub.language is None
 
 
@@ -173,7 +173,7 @@ def test_language_choice_is_saved_and_sent_to_phones(client, state):
         assert ws.receive_json()["language"] is None
 
         reply = client.put("/api/settings", json={"language": "en"}, headers=ORIGIN)
-        assert reply.json() == {"language": "en"}
+        assert reply.json() == {"language": "en", "check_updates": True}
         assert ws.receive_json() == {"type": "settings", "language": "en"}
 
         client.put("/api/settings", json={"language": "auto"}, headers=ORIGIN)

@@ -16,6 +16,8 @@ dependencies = [
     # uvicorn serves WebSocket only when a WebSocket library is installed.
     "websockets>=13",
     "segno>=1.6",
+    # Lets Windows check the certificate of GitHub: see updates.py.
+    "truststore>=0.10",
     "pystray>=0.19; sys_platform == 'win32'",
     "pillow>=10; sys_platform == 'win32'",
 ]

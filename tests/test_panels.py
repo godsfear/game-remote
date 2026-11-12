@@ -371,7 +371,7 @@ def test_a_set_that_cannot_be_moved_in_leaves_no_draft(tmp_path, monkeypatch):
     shared = read_set(write_set(tmp_path / "shared"))
     store = PanelStore(tmp_path / "panels")
     store.root.mkdir()
-    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    monkeypatch.setattr("game_remote.files.os.replace", refused)
     with pytest.raises(PermissionError):
         store.install_set(shared, "elite", "en")
     assert list(store.root.iterdir()) == []

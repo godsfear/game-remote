@@ -22,10 +22,16 @@ from game_remote.server.editor import create_editor_app
 from game_remote.server.remote import create_remote_app
 from game_remote.state import AppState, build_state
 from game_remote.tray import start_tray
+from game_remote.updates import refresh_update
 
 log = logging.getLogger("game_remote")
 
 PANEL_WATCH_SECONDS = 1.0
+# The first question about a newer version waits a minute: a user who does not
+# want it has the time to turn the check off in the editor.
+FIRST_CHECK_SECONDS = 60
+UPDATE_CHECK_SECONDS = 24 * 60 * 60
+RETRY_CHECK_SECONDS = 60 * 60
 
 
 def _server(app, host: str, port: int) -> uvicorn.Server:
@@ -51,6 +57,27 @@ async def watch_panels(state: AppState) -> None:
                 await state.hub.broadcast_panels()
         except Exception:
             log.exception("Could not reload the panels")
+
+
+async def watch_updates(state: AppState) -> None:
+    """Ask a minute after the start, then once a day, whether a newer version
+    is out; and at once when the check is turned on in the editor. A question
+    GitHub did not answer is asked again in an hour, then less and less often:
+    a refusal that lasts is not asked about every hour for ever."""
+    wait, retry = FIRST_CHECK_SECONDS, RETRY_CHECK_SECONDS
+    while True:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(state.check_now.wait(), wait)
+        state.check_now.clear()
+        answered = False
+        try:
+            answered = await refresh_update(state)
+        except Exception:
+            log.exception("Could not check for a newer version")
+        if answered:
+            wait, retry = UPDATE_CHECK_SECONDS, RETRY_CHECK_SECONDS
+        else:
+            wait, retry = retry, min(retry * 2, UPDATE_CHECK_SECONDS)
 
 
 async def serve(state: AppState, tray: bool = False) -> None:
@@ -83,6 +110,7 @@ async def serve(state: AppState, tray: bool = False) -> None:
     helpers = [
         asyncio.create_task(watch_panels(state)),
         asyncio.create_task(state.hub.watch_focus()),
+        asyncio.create_task(watch_updates(state)),
         asyncio.create_task(when_ready()),
     ]
     try:

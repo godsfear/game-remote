@@ -17,6 +17,10 @@
     <p id="save-state" role="status"></p>
   </header>
   <p id="fake" class="banner" data-i18n="editor.fakeInput" hidden></p>
+  <p id="update" class="banner note" hidden>
+    <span id="update-text"></span>
+    <a href="https://github.com/godsfear/game-remote/releases/latest" target="_blank" rel="noopener" data-i18n="editor.updateGet"></a>
+  </p>
   <p id="offline" class="banner bad" data-i18n="editor.offline" hidden></p>
   <main>
     <div class="column" id="left">
@@ -196,6 +200,7 @@
         <option value="en">English</option>
       </select>
     </label>
+    <label><input id="check-updates" type="checkbox" checked> <span data-i18n="editor.checkUpdates"></span></label>
     <span class="row">
       <button id="open-folder" type="button" class="quiet" data-i18n="editor.openFolder"></button>
       <button id="quit" type="button" class="quiet" data-i18n="editor.quit"></button>

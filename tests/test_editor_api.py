@@ -336,7 +336,7 @@ def test_an_import_that_cannot_be_written_says_so_and_leaves_nothing(client, sta
     def refused(source, target):
         raise PermissionError(13, "Access is denied")
 
-    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    monkeypatch.setattr("game_remote.files.os.replace", refused)
     files = {"panel.json": ELITE, "cover.png": PNG, "gear.png": PNG}
     reply = client.post("/api/sets", content=zipped(files), headers=ZIP)
     assert reply.status_code == 500
@@ -472,7 +472,7 @@ def test_a_replacement_that_fails_leaves_the_game_where_it_was(client, state, mo
     def refused(source, target):
         raise PermissionError(13, "Access is denied")
 
-    monkeypatch.setattr("game_remote.panels.os.replace", refused)
+    monkeypatch.setattr("game_remote.files.os.replace", refused)
     changed = {**files, "panel.json": ELITE | {"columns": 5}}
     reply = client.post("/api/sets?same_name=replace", content=zipped(changed), headers=ZIP)
     assert reply.status_code == 500

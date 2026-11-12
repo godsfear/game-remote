@@ -15,6 +15,8 @@ main { display: grid; grid-template-columns: 290px minmax(0, 1fr) 340px; gap: 18
 section { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
 .banner { margin-top: 0; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; background: #3a3320; color: #ffe9a8; }
 .banner.bad { background: #3a1f24; color: #ffd9d9; }
+.banner.note { background: #1c2b40; color: #d6e6ff; }
+.banner a { color: inherit; font-weight: 600; }
 .hint { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
 .empty { color: var(--muted); font-size: 14px; }
 .error-text { color: #ffb4b4; font-size: 14px; margin: 8px 0 0; }

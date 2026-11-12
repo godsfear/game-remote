@@ -622,6 +622,50 @@ async function main() {
   ok('"auto" gives the language back to the browser', await until(async () => (await page.locator('#status-text').textContent()) === 'На связи'));
   await until(async () => (await desk.locator('#games h2').textContent()) === 'Игры');
 
+  // ---- a newer version of the program ----------------------------------------
+  // Test mode asks nothing outside the PC, so the answer of the PC is changed on its way.
+  ok('no notice while no newer version is known', await desk.locator('#update').isHidden());
+  const settingsFile = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
+  ok('the check for a new version is on by default', await desk.locator('#check-updates').isChecked());
+  await desk.route('**/api/status', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), update: '9.9.9' } });
+  });
+  ok('the editor tells that a newer version is out',
+    await until(async () => (await desk.locator('#update-text').textContent()) === 'Вышел Game Remote 9.9.9.'));
+  ok('the notice links to the latest release',
+    (await desk.locator('#update a').getAttribute('href')) === 'https://github.com/godsfear/game-remote/releases/latest'
+    && (await desk.locator('#update a').textContent()) === 'Скачать');
+  await shot(desk, 'pc-editor-update', { fullPage: true });
+  await desk.unroute('**/api/status');
+  ok('the notice goes away with the newer version', await until(() => desk.locator('#update').isHidden()));
+  await desk.uncheck('#check-updates');
+  ok('the switch of the check is saved on the PC', await until(() => settingsFile().check_updates === false));
+  await desk.reload();
+  await desk.waitForSelector('#game-list li');
+  ok('the switch stays off after the page is opened again', !(await desk.locator('#check-updates').isChecked()));
+  await desk.check('#check-updates');
+  ok('the check is turned on again', await until(() => settingsFile().check_updates === true));
+  // The PC does not answer: the box must not show a choice that was not saved.
+  const noted = errors.length;
+  await desk.route(/\/api\/(settings|status)$/, (route) => route.abort());
+  await desk.click('#check-updates');
+  ok('a switch the PC could not save goes back and the editor says so', await until(async () => (
+    (await desk.locator('#check-updates').isChecked()) && (await desk.locator('#save-state.error').count()) === 1
+  )) && settingsFile().check_updates === true);
+  await desk.unroute(/\/api\/(settings|status)$/);
+  // Another window of the editor changes the setting: this one follows.
+  await desk.evaluate(() => fetch('/api/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ check_updates: false }),
+  }));
+  ok('the switch follows a change made in another window',
+    await until(async () => !(await desk.locator('#check-updates').isChecked())));
+  // The browser noted the requests cut off above in its console: those are expected.
+  // Dropped here, after a poll that went through, so that none of them comes late.
+  errors.push(...errors.splice(noted).filter((line) => !line.includes('net::ERR_FAILED')));
+  await desk.check('#check-updates');
+  ok('and is turned on from this one', await until(() => settingsFile().check_updates === true));
+
   // A file edited by hand shows up in the open editor.
   const demoFile = path.join(dataDir, 'panels', 'demo', 'panel.json');
   const demo = JSON.parse(fs.readFileSync(demoFile, 'utf8'));

@@ -46,8 +46,11 @@ class NewPanel(BaseModel):
     name: str = Field(min_length=1, max_length=60)
 
 
-class LanguageChoice(BaseModel):
-    language: Language = "auto"
+class SettingsChoice(BaseModel):
+    """What the page changes; a field it does not name stays as it is."""
+
+    language: Language | None = None
+    check_updates: bool | None = None
 
 
 class DeviceName(BaseModel):
@@ -136,6 +139,10 @@ def create_editor_app(state: AppState) -> FastAPI:
             "panels_dir": str(store.root),
             "revision": store.revision,
             "fake_input": state.fake_input,
+            # A newer version of the program that is out, e.g. "0.5.0", or None.
+            "update": state.update,
+            # Here too, so that the box follows a change made in another window.
+            "check_updates": state.user.check_updates,
             "held_keys": sorted(state.controller.held_keys),
         }
 
@@ -299,17 +306,29 @@ def create_editor_app(state: AppState) -> FastAPI:
         await state.hub.broadcast_panels()
         return JSONResponse({"id": panel_id, **panels_reply()}, status_code=201)
 
+    def settings_reply() -> dict:
+        return {"language": state.user.language, "check_updates": state.user.check_updates}
+
     @app.get("/api/settings")
     async def get_settings() -> dict:
-        return {"language": state.user.language}
+        return settings_reply()
 
     @app.put("/api/settings")
-    async def put_settings(body: LanguageChoice) -> dict:
-        # Only the language is the page's to change; the rest of the file stays.
-        state.user = state.user.model_copy(update={"language": body.language})
-        save_user_settings(settings.user_settings_path, state.user)
-        await state.hub.set_language(state.user.forced_language)
-        return {"language": state.user.language}
+    async def put_settings(body: SettingsChoice) -> dict:
+        # Only these two are the page's to change; the rest of the file stays.
+        before = state.user
+        chosen = before.model_copy(update=body.model_dump(exclude_none=True))
+        # Written first: a choice that could not be saved is not acted upon.
+        save_user_settings(settings.user_settings_path, chosen)
+        state.user = chosen
+        if body.language is not None:
+            await state.hub.set_language(state.user.forced_language)
+        if not state.user.check_updates:
+            state.update = None  # the notice goes away with the check
+        elif not before.check_updates:
+            # Turned on: the program asks now. The page does not wait for GitHub.
+            state.check_now.set()
+        return settings_reply()
 
     @app.get("/panel-files/{panel_id}/{name}")
     async def panel_file(panel_id: str, name: str) -> FileResponse:

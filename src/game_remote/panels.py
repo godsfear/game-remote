@@ -15,7 +15,6 @@ import io
 import json
 import logging
 import lzma
-import os
 import re
 import secrets
 import shutil
@@ -30,6 +29,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from game_remote.config import system_language
+from game_remote.files import replace_file
 from game_remote.input.keys import Combo
 from game_remote.web import sample_dir
 
@@ -415,19 +415,6 @@ def unpack_set(data: bytes, folder: Path) -> None:
             (folder / name).write_bytes(content)
 
 
-def _replace(source: Path, target: Path) -> None:
-    """``os.replace`` that waits a moment for a file somebody holds: on Windows
-    an antivirus or an editor does that to a file that was just written."""
-    for attempt in range(5):
-        try:
-            os.replace(source, target)
-            return
-        except PermissionError:
-            if attempt == 4:
-                raise
-            time.sleep(0.05)
-
-
 class PanelStore:
     """Reads every panel folder. Files with mistakes are reported, not fatal."""
 
@@ -510,7 +497,7 @@ class PanelStore:
         # Write next to the file and swap, so a crash never leaves half a file.
         temporary = folder / (PANEL_FILE + ".tmp")
         temporary.write_text(panel_text(panel), encoding="utf-8")
-        _replace(temporary, folder / PANEL_FILE)
+        replace_file(temporary, folder / PANEL_FILE)
         self._remove_unused_uploads(folder, panel)
         self.load()
 
@@ -644,7 +631,7 @@ class PanelStore:
             (draft / PANEL_FILE).write_text(panel_text(panel), encoding="utf-8")
             trashed = self._to_trash(panel_id) if replace else None
             try:
-                _replace(draft, self.root / panel_id)
+                replace_file(draft, self.root / panel_id)
             except OSError:
                 # The old panel comes back: an import that failed changes nothing.
                 if trashed is not None:

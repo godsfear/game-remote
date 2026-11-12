@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from game_remote.files import replace_file
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +21,8 @@ class UserSettings(BaseModel):
 
     # "auto": every device uses the language of its own browser.
     language: Language = "auto"
+    # Ask GitHub now and then whether a newer version of the program is out.
+    check_updates: bool = True
     # Ready-made panels that were already put into the panels folder. One the
     # user deleted is not installed again.
     samples: list[str] = Field(default_factory=list)
@@ -43,4 +46,4 @@ def save_user_settings(path: Path, settings: UserSettings) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(settings.model_dump(), indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    replace_file(temporary, path)

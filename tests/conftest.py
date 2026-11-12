@@ -1,4 +1,5 @@
 import json
+import socket
 import time
 
 import pytest
@@ -26,6 +27,12 @@ def state(tmp_path):
     state = build_state(settings, fake_input=True, tap_ms=1)
     yield state
     state.devices.close()
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def phone_key(state, name="Test phone") -> str:

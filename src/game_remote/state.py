@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sqlite3
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from game_remote.access import PairingCodes, remove_legacy_key
@@ -19,6 +20,7 @@ from game_remote.input.backend import default_backend
 from game_remote.input.controller import DEFAULT_TAP_MS
 from game_remote.input.windows import ForegroundInfo, OpenWindow, foreground_info, open_windows
 from game_remote.panels import SAMPLE_ID, PanelStore
+from game_remote.updates import latest_version
 from game_remote.user_settings import UserSettings, load_user_settings, save_user_settings
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,12 @@ class AppState:
     user: UserSettings
     # Programs with an open window, for binding a panel to a game.
     windows: Callable[[], list[OpenWindow]] = open_windows
+    # Asks for the version of the latest release; None when it is not known.
+    latest_version: Callable[[], str | None] = latest_version
+    # A newer version of the program that is out, for the editor to tell about.
+    update: str | None = None
+    # Set to ask for the latest version now, not when its day has passed.
+    check_now: asyncio.Event = field(default_factory=asyncio.Event)
     # Set by the running program: stops both servers. None while nothing is running.
     stop: Callable[[], None] | None = None
 
@@ -93,4 +101,8 @@ def build_state(
     hub = RemoteHub(controller, store, devices, pairing, foreground=foreground)
     hub.language = user.forced_language
     windows = _sample_windows if fake_input else open_windows
-    return AppState(settings, backend, controller, store, hub, devices, pairing, user, windows)
+    state = AppState(settings, backend, controller, store, hub, devices, pairing, user, windows)
+    if fake_input:
+        # Test mode stays on the PC: nothing is asked outside it.
+        state.latest_version = lambda: None
+    return state
