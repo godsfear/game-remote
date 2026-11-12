@@ -153,9 +153,18 @@ def wait_for(condition, what: str, timeout: float = 6.0) -> None:
         time.sleep(0.1)
 
 
+def receive(ws, timeout: float = 5) -> dict:
+    """The next message of the PC that answers something. "active" does not:
+    it comes whenever the PC learns which window is active."""
+    while True:
+        message = json.loads(ws.recv(timeout=timeout))
+        if message["type"] != "active":
+            return message
+
+
 def exchange(ws, message: dict) -> dict:
     ws.send(json.dumps(message))
-    return json.loads(ws.recv(timeout=5))
+    return receive(ws)
 
 
 def check(program: Program, say=print) -> None:
@@ -197,7 +206,7 @@ def check(program: Program, say=print) -> None:
         paired = exchange(ws, {"type": "pair", "code": code, "name": "Smoke phone"})
         assert paired["type"] == "paired" and len(paired["key"]) >= 40, paired
         key = paired["key"]
-        welcome = json.loads(ws.recv(timeout=5))
+        welcome = receive(ws)
         assert welcome["type"] == "welcome", welcome
         assert [p["id"] for p in welcome["panels"]] == [OWN, SAMPLE], welcome
     with program.phone() as ws:
@@ -239,7 +248,7 @@ def check(program: Program, say=print) -> None:
         program.own_panel.write_text(
             json.dumps(OWN_PANEL | {"name": "Smoke test"}), encoding="utf-8"
         )
-        pushed = json.loads(ws.recv(timeout=10))
+        pushed = receive(ws, timeout=10)
         assert pushed["type"] == "panels" and pushed["panels"][0]["name"] == "Smoke test", pushed
     say("an edited panel file reaches the phone")
 

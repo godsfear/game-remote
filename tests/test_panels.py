@@ -8,10 +8,13 @@ from pydantic import ValidationError
 
 from game_remote.config import Settings
 from game_remote.panels import (
+    FORMAT,
     SAMPLE_ID,
     Button,
+    NewerFormat,
     Panel,
     PanelStore,
+    Translation,
     demo_panel,
     panel_text,
     read_set,
@@ -395,6 +398,112 @@ def test_a_set_becomes_a_panel_in_one_language(tmp_path):
 def test_a_set_with_a_mistake_names_the_file(tmp_path, panel, translations, problem):
     with pytest.raises(ValueError, match=problem):
         read_set(write_set(tmp_path, panel, **translations))
+
+
+def test_a_panel_of_a_newer_version_asks_for_an_update(tmp_path, monkeypatch):
+    """Not "buttons.0.type: Input should be ...": a newer program wrote the
+    file, and what it wrote there this one cannot judge."""
+    newer = MINIMAL | {"format": FORMAT + 1, "buttons": [{"id": "a", "type": "macro"}]}
+    with pytest.raises(NewerFormat, match="^made for a newer version of Game Remote"):
+        read_set(write_set(tmp_path / "shared", newer))
+    # The same for a folder of the user's own: copied from a PC with a newer program.
+    store = PanelStore(tmp_path / "panels")
+    write_panel(store.root, "x4", newer)
+    write_panel(store.root, "old", MINIMAL | {"format": 1})
+    store.load()
+    assert list(store.panels) == ["old"]
+    assert store.errors == {"x4": "made for a newer version of Game Remote: update the program"}
+    # A format that is no number is a mistake like any other, also one that
+    # looks like a number: the versions before this one refuse it as well.
+    with pytest.raises(ValueError, match="panel.json: format"):
+        read_set(write_set(tmp_path / "wrong", MINIMAL | {"format": "1"}))
+    # A file gets the number of the program that writes it, not the one the
+    # panel was read with: with the next format the program before it refuses
+    # what the new one saves and exports.
+    monkeypatch.setattr("game_remote.panels.FORMAT", FORMAT + 1)
+    written = json.loads(panel_text(Panel.model_validate(MINIMAL | {"format": 1})))
+    monkeypatch.undo()
+    assert written["format"] == FORMAT + 1
+    with pytest.raises(NewerFormat):
+        read_set(write_set(tmp_path / "next", written))
+    assert json.loads(panel_text(Panel.model_validate(MINIMAL)))["format"] == FORMAT
+    # What the versions before this one took, this one takes too.
+    assert read_set(write_set(tmp_path / "float", MINIMAL | {"format": 1.0})).panel.name == "X4"
+
+
+def picture(model) -> dict[str, str]:
+    """Every field a file of this model may hold, with the limits on its value."""
+    limits = (
+        "const",
+        "enum",
+        "exclusiveMaximum",
+        "maxItems",
+        "maxLength",
+        "maximum",
+        "minLength",
+        "minimum",
+        "pattern",
+    )
+    fields: dict[str, list[str]] = {}
+
+    def walk(node, field):
+        if isinstance(node, list):
+            for item in node:
+                walk(item, field)
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                if key in limits:
+                    fields[field].append(f"{key}={value}")
+                elif key in ("properties", "$defs"):
+                    for name, inner in value.items():
+                        inner_field = f"{field}.{name}".lstrip(".")
+                        fields[inner_field] = []
+                        walk(inner, inner_field)
+                else:
+                    walk(value, field)
+
+    walk(model.model_json_schema(), "")
+    return {field: " ".join(sorted(found)) for field, found in fields.items()}
+
+
+def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
+    """This test fails when a file of a set may hold something new: a field, a
+    kind of button, a longer label, one more column. The program before the
+    change refuses such a file. So raise FORMAT in ``panels.py`` and let
+    ``Panel.format`` take the new number too: then that program asks for an
+    update instead of naming what it stumbled over. A set written by hand that
+    uses what is new and still says the old number must be refused as well.
+    After that write the new picture of the files here. (Toggles came in 0.6.0 without it, and 0.5.0
+    answers them with "buttons.0.type: Input should be".)"""
+    image = r"pattern=^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
+    assert FORMAT == 1
+    assert picture(Panel) == {
+        "Button": "",
+        "Button.color": "pattern=^#[0-9a-fA-F]{6}$",
+        "Button.id": "pattern=^[A-Za-z0-9_-]{1,40}$",
+        "Button.image": image,
+        "Button.keys": "",
+        "Button.label": "maxLength=40",
+        "Button.on": "",
+        "Button.screen": "exclusiveMaximum=8 minimum=0",
+        "Button.type": "enum=['tap', 'hold', 'toggle']",
+        "background": image,
+        "buttons": "maxItems=200",
+        "columns": "maximum=8 minimum=1",
+        "cover": image,
+        "format": "const=1",
+        "language": "pattern=^[a-z]{2}$",
+        "name": "maxLength=60 minLength=1",
+        "screens": "maxItems=8 maxLength=24 minLength=1",
+        "shape": "enum=['fill', 'square']",
+        "window": "maxLength=260",
+    }
+    # The translations of a set travel with it and are read as strictly.
+    assert picture(Translation) == {
+        "labels": "maxLength=40",
+        "name": "maxLength=60 minLength=1",
+        "screens": "maxLength=24 minLength=1",
+    }
 
 
 def test_a_set_that_cannot_be_moved_in_leaves_no_draft(tmp_path, monkeypatch):

@@ -22,6 +22,7 @@ from game_remote.panels import (
     MAX_IMAGE_BYTES,
     MAX_SET_BYTES,
     ImageError,
+    NewerFormat,
     Panel,
     SameName,
     pack_set,
@@ -297,6 +298,9 @@ def create_editor_app(state: AppState) -> FastAPI:
         except SameName as twin:
             found = {"error": "same_name", "id": twin.panel_id, "name": twin.name}
             return JSONResponse(found, status_code=409)
+        except NewerFormat:
+            # Not a reason in words, like the others: the page says it in its language.
+            return JSONResponse({"error": "newer_version"}, status_code=422)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
         except OSError as exc:

@@ -22,6 +22,7 @@ import tempfile
 import time
 import zipfile
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -36,6 +37,13 @@ from game_remote.web import sample_dir
 log = logging.getLogger(__name__)
 
 PANEL_FILE = "panel.json"
+# What "format" in panel.json says. It grows by one when the file changes so
+# that the program before the change cannot read it: that program then says
+# "update me" (NewerFormat) instead of naming the field it stumbled over.
+# Every file the program writes carries this number (see panel_text). A set
+# written by hand does not: when the number grows, a file that uses what is
+# new and says an older number has to be refused in Panel.
+FORMAT = 1
 # The ready-made panel a new user starts with: Star Citizen with the keys the
 # game has by default. It ships with the program as a set, in ``samples``.
 SAMPLE_ID = "star-citizen"
@@ -61,6 +69,13 @@ UNUSED_IMAGE_SECONDS = 600
 
 class ImageError(ValueError):
     """An uploaded file is not an image this program accepts."""
+
+
+class NewerFormat(ValueError):
+    """The panel was written by a newer version of the program than this one."""
+
+    def __init__(self) -> None:
+        super().__init__("made for a newer version of Game Remote: update the program")
 
 
 class SameName(Exception):
@@ -122,6 +137,7 @@ class Button(BaseModel):
 class Panel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Every format this program reads; FORMAT is the newest of them.
     format: Literal[1] = 1
     # Only in a panel that is shared as a set (see PanelSet): the language its
     # texts are in, e.g. "en". A panel in the user's own folder does not carry it.
@@ -240,11 +256,23 @@ class LoadedPanel:
         return path if path.is_file() else None
 
 
+def parse_panel(data: object) -> Panel:
+    """The panel that a ``panel.json`` holds. A file of a newer version is told
+    apart from a file with a mistake: its other fields are not even looked at."""
+    newer = isinstance(data, dict) and isinstance(data.get("format"), (int, float))
+    if newer and data["format"] > FORMAT:
+        raise NewerFormat
+    return Panel.model_validate(data)
+
+
 def panel_text(panel: Panel) -> str:
     """The panel as ``panel.json`` holds it. A panel without screens is written
     without their fields, so the version before screens still reads the file;
     the same goes for a button that is not a toggle that starts on."""
     data = panel.model_dump(exclude_none=True)
+    # A file this program writes is of this program's format, whatever number
+    # the panel came with: an older program must see that it is not for it.
+    data["format"] = FORMAT
     if not panel.screens:
         del data["screens"]
     for button in data["buttons"]:
@@ -321,10 +349,11 @@ def read_set(folder: Path) -> PanelSet:
     """Reads a set and checks that it is whole. A ValueError names the file
     that is wrong."""
 
-    def read(name: str, model: type[BaseModel]) -> BaseModel:
+    def read(name: str, parse: Callable[[object], BaseModel]) -> BaseModel:
         try:
-            data = json.loads((folder / name).read_text(encoding="utf-8-sig"))
-            return model.model_validate(data)
+            return parse(json.loads((folder / name).read_text(encoding="utf-8-sig")))
+        except NewerFormat:
+            raise  # not a mistake in a file: the whole set asks for another program
         except OSError as exc:  # without the path: for an import it is a temporary folder
             raise ValueError(f"{name}: {exc.strerror or exc}") from exc
         except ValueError as exc:
@@ -332,7 +361,7 @@ def read_set(folder: Path) -> PanelSet:
 
     if not (folder / PANEL_FILE).is_file():
         raise ValueError(f"there is no {PANEL_FILE} in the set")
-    panel = read(PANEL_FILE, Panel)
+    panel = read(PANEL_FILE, parse_panel)
     for name in sorted(panel.images()):
         if not (folder / name).is_file():
             raise ValueError(f"{PANEL_FILE}: the picture {name} is not in the set")
@@ -341,7 +370,7 @@ def read_set(folder: Path) -> PanelSet:
         match = _TRANSLATION_RE.match(path.name)
         if match is None:
             raise ValueError(f"{path.name}: a translation is called like panel.ru.json")
-        texts = read(path.name, Translation)
+        texts = read(path.name, Translation.model_validate)
         if match[1] == panel.language:
             raise ValueError(f"{path.name}: {PANEL_FILE} is in this language already")
         if texts.screens is not None and len(texts.screens) != len(panel.screens):
@@ -479,7 +508,7 @@ class PanelStore:
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8-sig"))
-                panels[panel_id] = LoadedPanel(panel_id, path.parent, Panel.model_validate(data))
+                panels[panel_id] = LoadedPanel(panel_id, path.parent, parse_panel(data))
             except (OSError, ValueError) as exc:
                 errors[panel_id] = short_error(exc)
                 log.warning("Panel %s was not loaded: %s", panel_id, errors[panel_id])

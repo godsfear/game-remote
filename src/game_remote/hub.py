@@ -5,7 +5,8 @@ Protocol (JSON over WebSocket):
     phone -> PC   {"type": "pair", "code": "...", "name": "Pixel 7"}   first visit
     PC -> phone   {"type": "paired", "key": "..."}           the phone keeps the key
     phone -> PC   {"type": "hello", "key": "..."}            every later visit
-    PC -> phone   {"type": "welcome", "panels": [...], "language": "ru" | null}
+    PC -> phone   {"type": "welcome", "panels": [...], "language": "ru" | null,
+                   "active": ["x4"] | null}
     phone -> PC   {"type": "down", "id": 7, "panel": "x4", "button": "map"}
     phone -> PC   {"type": "up",   "id": 8, "panel": "x4", "button": "map"}
     PC -> phone   {"type": "ack",  "id": 7, "ok": true}
@@ -17,6 +18,7 @@ Protocol (JSON over WebSocket):
     PC -> phone   {"type": "released"}                       held keys were let go
     phone -> PC   {"type": "flip", "id": 9, "panel": "x4", "button": "lights"}
     PC -> phone   {"type": "lit", "panel": "x4", "button": "lights", "on": true}
+    PC -> phone   {"type": "active", "panels": ["x4"]}       another window is active
 
 "language" is the interface language chosen on the PC; null means that the
 phone uses the language of its own browser.
@@ -34,12 +36,19 @@ A toggle button is lit or not. The PC keeps that state, so every phone shows
 the same: "down" presses the keys and changes it, "flip" changes it without a
 key, for the case the light and the game went apart. Both are told to every
 phone with "lit"; "welcome" and "panels" carry the state in "on" of the button.
+
+"active" names the panels bound to the program whose window is active on the
+PC, so that a phone opens the game the player switched to. "welcome" carries
+the list for a phone that connects, or null when the PC cannot tell at that
+moment. After that a phone is sent "active" whenever the list is not the one
+it was told last, and nothing while it is the same.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import itertools
 import json
 import logging
@@ -74,6 +83,14 @@ class Connection:
     address: str
     device: Device
     held: dict[tuple[str, str], Combo] = field(default_factory=dict)
+    # The panels of the active window, as this phone was told last. None: it
+    # was told nothing yet, because the window was not known when it connected.
+    active: list[str] | None = None
+
+
+def _is_window_of(info: ForegroundInfo, window: str) -> bool:
+    """True when the active window belongs to the program a panel is bound to."""
+    return (info.exe_name or "").lower() == window.lower()
 
 
 class RemoteHub:
@@ -119,13 +136,21 @@ class RemoteHub:
                 log.info("Refused %s: unknown %s", address, "code" if bad_code else "key")
                 await ws.close(code=CLOSE_BAD_CODE if bad_code else CLOSE_BAD_KEY)
                 return
-            conn = Connection(f"phone-{next(self._ids)}", ws, address, device)
+            if key is not None:
+                await self._send(ws, {"type": "paired", "key": key})
+            # From here to "welcome" nothing waits: the watcher of the active
+            # window cannot tell this phone anything before its first message.
+            name = f"phone-{next(self._ids)}"
+            conn = Connection(name, ws, address, device, active=self.active_panels())
             self.connections[conn.id] = conn
             self.devices.touch(device.id)
             log.info("%s connected from %s as %r", conn.id, address, device.name)
-            if key is not None:
-                await self._send(ws, {"type": "paired", "key": key})
-            welcome = {"type": "welcome", "panels": self.panels(), "language": self.language}
+            welcome = {
+                "type": "welcome",
+                "panels": self.panels(),
+                "language": self.language,
+                "active": conn.active,
+            }
             await self._send(ws, welcome)
             while conn.id in self.connections:
                 message = await self._receive(ws, self.heartbeat_timeout)
@@ -241,13 +266,16 @@ class RemoteHub:
 
     # -- a held key must not follow the player into another window -------------
 
-    def check_focus(self) -> list[Connection]:
+    def check_focus(
+        self, look: Callable[[], ForegroundInfo | None] | None = None
+    ) -> list[Connection]:
         """Releases every held key once the active window belongs to another
-        program than at the moment of the press. Returns the phones it concerned."""
+        program than at the moment of the press. Returns the phones it concerned.
+        ``look`` is asked for the active window instead of ``foreground``."""
         holders = [conn for conn in self.connections.values() if conn.held]
         if not holders or self._held_pid is None:
             return []
-        info = self.foreground()
+        info = (look or self.foreground)()
         if info is None or info.pid is None or info.pid == self._held_pid:
             return []
         log.info("The active window changed: releasing held keys")
@@ -256,13 +284,45 @@ class RemoteHub:
             self._release_connection(conn)
         return holders
 
+    def active_panels(
+        self, look: Callable[[], ForegroundInfo | None] | None = None
+    ) -> list[str] | None:
+        """The panels bound to the program whose window is active now. None
+        while that program is not known: between two windows, off Windows."""
+        bound = [loaded for loaded in self.store.panels.values() if loaded.panel.window]
+        if not bound:
+            return []  # no panel has a window: the active one is not even asked about
+        info = (look or self.foreground)()
+        if info is None or not info.exe_name:
+            return None
+        return [loaded.id for loaded in bound if _is_window_of(info, loaded.panel.window)]
+
+    async def follow_window(self, look: Callable[[], ForegroundInfo | None] | None = None) -> None:
+        """Tells every phone that the active window is that of another game,
+        or of none, than the phone was told last: it opens the panel of the
+        game by itself. While the window is not known, nothing is said."""
+        if not self.connections:
+            return  # nobody to tell; a phone that connects reads it in "welcome"
+        active = self.active_panels(look)
+        if active is None:
+            return
+        for conn in list(self.connections.values()):
+            if conn.active != active:
+                conn.active = active
+                with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                    await self._send(conn.ws, {"type": "active", "panels": active})
+
     async def watch_focus(self, interval: float = FOCUS_WATCH_SECONDS) -> None:
         while True:
             await asyncio.sleep(interval)
             try:
-                for conn in self.check_focus():
+                # One look at the active window serves both checks, and none is
+                # taken when neither needs it.
+                look = functools.cache(self.foreground)
+                for conn in self.check_focus(look):
                     with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                         await self._send(conn.ws, {"type": "released"})
+                await self.follow_window(look)
             except Exception:
                 log.exception("Could not check the active window")
 
@@ -360,7 +420,7 @@ class RemoteHub:
     def _focus_problem(info: ForegroundInfo | None, window: str | None) -> str | None:
         if info is None:
             return None
-        if window and (info.exe_name or "").lower() != window.lower():
+        if window and not _is_window_of(info, window):
             return "not_focused"
         if input_blocked_by_elevation(info):
             return "elevated"

@@ -312,6 +312,79 @@ def test_press_is_rejected_when_another_window_has_focus(state, tmp_path):
     assert state.hub.recent[-1]["reason"] == "not_focused"
 
 
+def test_the_phones_are_told_which_game_has_the_active_window(state, tmp_path):
+    panel = tmp_path / "panels" / "demo" / "panel.json"
+    data = json.loads(panel.read_text(encoding="utf-8"))
+    panel.write_text(json.dumps(data | {"window": "X4.exe"}), encoding="utf-8")
+    hub = state.hub
+
+    def unknown():
+        return ForegroundInfo(None, None, "", None)
+
+    # No panel is bound to a window yet: the active one is not even asked about.
+    hub.foreground = None
+    with connect(state) as ws:
+        assert hello(ws, state)["active"] == []
+    state.store.load()
+    # A phone that connects in the middle of the game learns it at once.
+    hub.foreground = foreground("x4.EXE")
+    with connect(state) as ws:
+        assert hello(ws, state)["active"] == ["demo"]
+    hub.foreground = foreground("chrome.exe")
+    with connect(state) as ws:
+        assert hello(ws, state)["active"] == []
+    # Between two windows the PC cannot tell, and says so: the phone keeps what it knew.
+    hub.foreground = unknown
+    with connect(state) as ws:
+        assert hello(ws, state)["active"] is None
+
+    heard = []
+
+    async def send(ws, message):
+        heard.append((ws, message["type"], message["panels"]))
+
+    def told(*lists):
+        return [("phone", "active", panels) for panels in lists]
+
+    hub._send = send
+    looks = (
+        ("x4.exe", told(["demo"])),  # the player switched to the game
+        ("x4.exe", told(["demo"])),  # still there: said once
+        ("chrome.exe", told(["demo"], [])),
+        ("notepad.exe", told(["demo"], [])),  # another program that is no game: no news
+        (None, told(["demo"], [])),  # between two windows: not known, so nothing is said
+        ("x4.exe", told(["demo"], [], ["demo"])),
+    )
+    hub.connections = {"phone": SimpleNamespace(ws="phone", active=[], held={})}
+    for exe, said in looks:
+        hub.foreground = foreground(exe) if exe else unknown
+        asyncio.run(hub.follow_window())
+        assert heard == said, exe
+
+    # A phone that connected while the window was not known is told at the
+    # next look, and it alone: the other one knows already.
+    hub.connections["late"] = SimpleNamespace(ws="late", active=None, held={})
+    del heard[:]
+    asyncio.run(hub.follow_window())
+    assert heard == [("late", "active", ["demo"])]
+
+    # The watcher that runs in the program takes these looks.
+    async def watch():
+        watcher = asyncio.create_task(hub.watch_focus(0.01))
+        await asyncio.sleep(0.2)
+        watcher.cancel()
+
+    del heard[:]
+    hub.foreground = foreground("chrome.exe")
+    asyncio.run(watch())
+    assert sorted(heard) == [("late", "active", []), ("phone", "active", [])]
+
+    # Nobody is connected: the window is not even looked at.
+    hub.connections = {}
+    hub.foreground = None
+    asyncio.run(hub.follow_window())
+
+
 def test_held_keys_are_released_when_another_window_becomes_active(state):
     def window(pid):
         return lambda: ForegroundInfo(pid=pid, exe_path=r"C:\x.exe", title="", elevated=False)

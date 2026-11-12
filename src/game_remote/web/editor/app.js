@@ -143,10 +143,10 @@ function changed() {
   saveTimer = setTimeout(save, SAVE_DELAY_MS);
 }
 
-// What goes into the file: a button without keys is not a button yet.
+// What goes into the file: a button without keys is not a button yet. The
+// number of the file's format is not the page's to say: the PC writes it.
 function forFile(panel) {
   return {
-    format: 1,
     name: panel.name.trim(),
     columns: panel.columns,
     window: panel.window || null,
@@ -326,6 +326,7 @@ async function importSet(sameName = 'ask') {
     el['same-dialog'].showModal();
     return;
   }
+  if (data?.error === 'newer_version') throw new Error(t('editor.newerSet'));
   if (!response.ok) throw new Error(`${t('editor.importError')} ${data?.error || response.status}`);
   dirty.delete(data.id); // a game that was replaced is what the set says now
   currentId = data.id;

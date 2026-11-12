@@ -14,6 +14,8 @@ const PONG_TIMEOUT_MS = 3000;
 // A toggle touched this long changes its light and sends no key. Long enough
 // for a slow, firm press to stay a press.
 const FLIP_AFTER_MS = 1000;
+// After the PC opened another game by itself, touches are ignored this long.
+const QUIET_AFTER_FOLLOW_MS = 400;
 const CLOSE_BAD_KEY = 4401;
 const CLOSE_BAD_CODE = 4403;
 
@@ -51,6 +53,8 @@ let ws = null;
 let online = false;
 let panels = [];
 let panelId = store.get(PANEL_STORE);
+let activeGames = '[]'; // the games of the window that is active on the PC, as the PC said last
+let quietUntil = 0; // see QUIET_AFTER_FOLLOW_MS
 let nextId = 1;
 let lastPong = 0;
 let retryMs = 500;
@@ -233,7 +237,15 @@ function onMessage(message) {
     }
     dropAllPresses();
     panels = message.panels || [];
-    render();
+    const game = message.type === 'welcome' ? gameToFollow(message.active) : null;
+    if (game) follow(game);
+    else render();
+  } else if (message.type === 'active') {
+    const game = gameToFollow(message.panels);
+    if (!game) return;
+    releaseAll(); // before the panel changes: the PC is told which buttons go up
+    follow(game);
+    buzz([12, 40, 12, 40, 12]); // three short pulses: the screen is another one now
   } else if (message.type === 'released') {
     dropAllPresses(); // the game lost focus and the PC let go of the held keys
   } else if (message.type === 'lit') {
@@ -285,7 +297,7 @@ function tell(type, button, node) {
 }
 
 function press(button, node, pointerId) {
-  if (pressed.has(button.id) || !online) return;
+  if (pressed.has(button.id) || !online || performance.now() < quietUntil) return;
   const entry = { pointerId, node };
   pressed.set(button.id, entry);
   node.classList.add('down');
@@ -295,7 +307,9 @@ function press(button, node, pointerId) {
     entry.timer = setTimeout(() => {
       entry.flipped = true;
       tell('flip', button, node);
-      buzz(80); // one long pulse: two short ones mean a press the PC refused
+      // One long pulse. Two short ones mean a press the PC refused, three
+      // that the PC opened another game.
+      buzz(80);
     }, FLIP_AFTER_MS);
     return;
   }
@@ -395,6 +409,33 @@ function layout() {
 
 // ---- panel list ------------------------------------------------------------
 
+function openPanel(id) {
+  panelId = id;
+  store.set(PANEL_STORE, id);
+  el.list.hidden = true;
+  render();
+}
+
+// The PC names the games bound to the window that is active there. When that
+// changes, the phone opens such a game, unless it shows one of them already.
+// The same news twice changes nothing: after a reconnect in the middle of a
+// game the phone keeps the panel the player chose.
+function gameToFollow(ids) {
+  if (!Array.isArray(ids)) return null; // the PC cannot tell right now; it will
+  const said = JSON.stringify(ids);
+  if (said === activeGames) return null;
+  activeGames = said;
+  if (ids.includes(currentPanel()?.id)) return null;
+  return panels.find((panel) => ids.includes(panel.id))?.id || null;
+}
+
+// The PC opened a game: the buttons changed under the player's fingers. A
+// touch that was on its way to the old ones presses nothing.
+function follow(game) {
+  openPanel(game);
+  quietUntil = performance.now() + QUIET_AFTER_FOLLOW_MS;
+}
+
 function openList() {
   if (panels.length < 2) return;
   releaseAll();
@@ -413,12 +454,7 @@ function openList() {
     name.textContent = panel.name;
     button.append(name);
     button.setAttribute('aria-selected', String(panel.id === currentPanel().id));
-    button.addEventListener('click', () => {
-      panelId = panel.id;
-      store.set(PANEL_STORE, panelId);
-      el.list.hidden = true;
-      render();
-    });
+    button.addEventListener('click', () => openPanel(panel.id));
     item.append(button);
     return item;
   }));

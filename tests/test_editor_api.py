@@ -301,6 +301,14 @@ def test_a_set_cannot_write_outside_its_folder(client, state):
     assert strays == []
 
 
+def test_a_set_of_a_newer_version_is_refused_with_a_reason_of_its_own(client, state):
+    """The page turns it into "update the program", in the user's language."""
+    newer = ELITE | {"format": 2, "buttons": [{"id": "a", "type": "macro"}]}
+    reply = client.post("/api/sets", content=zipped({"panel.json": newer}), headers=ZIP)
+    assert (reply.status_code, reply.json()) == (422, {"error": "newer_version"})
+    assert [p.name for p in state.settings.panels_dir.iterdir()] == ["demo"]
+
+
 def test_import_needs_the_editors_origin(client):
     assert client.post("/api/sets", content=zipped({"panel.json": ELITE})).status_code == 403
 

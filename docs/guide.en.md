@@ -77,7 +77,7 @@ The page on the PC is the editor. The list of games is on the left, the buttons 
 4. The arrows or dragging in the list change the order of the buttons, the "−" and "+" buttons change the number of columns.
 5. When there are many buttons, put them on screens: "Add a screen" above the list of buttons. The tabs switch the screen, the field under them renames the current screen, a new button lands on the open screen. The field "Screen" in the settings of a button moves it to another screen. "Delete the screen" deletes the screen with its buttons. There can be up to eight screens.
 
-A game can have a cover: it shows in the list of games on the phone. "Background on the phone" puts a picture under the buttons. The switch "Buttons" chooses their shape: "Fill the screen" stretches the buttons over the grid, "Square" puts square buttons in the middle of the screen, and the background shows around them. The window of the game is set in the same place: start the game, press "Choose a window" and choose it in the list of open windows. After that the buttons work only while a window of this program is active, and a press does not land in a chat or a browser. Without that, the keys go to whatever window is active. The language is chosen at the bottom of the page. In the "Auto" mode the editor and every phone use the language of their own browser, and a chosen language becomes the language of all devices.
+A game can have a cover: it shows in the list of games on the phone. "Background on the phone" puts a picture under the buttons. The switch "Buttons" chooses their shape: "Fill the screen" stretches the buttons over the grid, "Square" puts square buttons in the middle of the screen, and the background shows around them. The window of the game is set in the same place: start the game, press "Choose a window" and choose it in the list of open windows. After that the buttons work only while a window of this program is active, and a press does not land in a chat or a browser. The phone opens such a game by itself when you switch to its window on the PC: it answers with three short pulses and takes no touches for a fraction of a second, so that a finger does not press a button of the new panel by mistake. Another game can still be chosen on the phone by hand, and it stays on the screen until the window on the PC changes again. Without that, the keys go to whatever window is active. The language is chosen at the bottom of the page. In the "Auto" mode the editor and every phone use the language of their own browser, and a chosen language becomes the language of all devices.
 
 There is nothing to save: changes are written by themselves, and a panel that is open on a phone updates at once. A deleted game is not erased, it is moved to `%LOCALAPPDATA%\GameRemote\trash`.
 
@@ -115,7 +115,8 @@ An example, `panels\x4\panel.json`:
 | --- | --- |
 | `name` | The name of the panel, shown on the phone |
 | `columns` | The number of columns in portrait, from 1 to 8. 3 by default. Landscape fits twice as many |
-| `window` | Optional. The name of the exe of the game; the editor chooses it from the open windows. When it is set, presses are rejected while a window of another program is active |
+| `window` | Optional. The name of the exe of the game; the editor chooses it from the open windows. When it is set, presses are rejected while a window of another program is active, and the phone opens this panel by itself when the window of the game becomes active |
+| `format` | The number of the file's format. The program writes it itself, there is no need to change it. A file with a number larger than the program knows was made by a newer version: the program does not read it and asks to be updated |
 | `buttons` | The buttons in the order they have on the screen |
 | `id` | The name of the button inside the panel: Latin letters, digits, `-` and `_`. It is not repeated |
 | `label` | The label, up to 40 characters |
@@ -146,7 +147,7 @@ The full list is in [`src/game_remote/input/keys.py`](../src/game_remote/input/k
 A set is a game in one zip file: its buttons, screens and pictures. It can be shared with another player, or it can carry a game to another PC.
 
 - **Export.** Choose the game and press "Export as a set" at the bottom of its card. The editor asks which language the labels of the game are in, and offers the language of its own interface. The browser saves a file named after the folder of the game, for example `star-citizen.zip`.
-- **Import.** Press "Import a set" under the list of games and choose the zip. The set becomes a new game; from then on it can be changed like your own. When a game of that name is there already, the editor asks whether to add the set next to it or to replace the game with it. A replaced game is not erased, it is moved to `%LOCALAPPDATA%\GameRemote\trash`; the set takes its place, so the phones keep showing the same game.
+- **Import.** Press "Import a set" under the list of games and choose the zip. The set becomes a new game; from then on it can be changed like your own. When a game of that name is there already, the editor asks whether to add the set next to it or to replace the game with it. A replaced game is not erased, it is moved to `%LOCALAPPDATA%\GameRemote\trash`; the set takes its place, so the phones keep showing the same game. A set made for a newer version of Game Remote is not imported: the editor asks to update the program.
 
 A set holds only names, pictures and shortcuts. Before you play, look in the editor at the keys the buttons of someone else's set press: in your game they may be set differently.
 
@@ -202,6 +203,7 @@ Games that are protected against software input do not see the presses. Undecemb
 - How the antivirus and SmartScreen react to the exe.
 - Connect a second device, rename it and disconnect it. After the program is restarted, the phone must connect by itself, without the QR code. After the router is restarted too, when the address of the PC stayed the same.
 - Tie a panel to the window of a game: outside the game the phone must say "The game window is not active", in the game the buttons must work. Is the game in the list of windows, and is there too much else in it?
+- Switch to the window of a bound game on the PC: the phone must open its panel by itself and give three short pulses. Is the pause after that in the way (a fraction of a second when touches are not taken)? Does a game chosen on the phone by hand stay on the screen until you leave the window of the game and come back to it?
 - Does the remote open from the QR code at the first try? When the list of addresses on the PC page has the name of the computer (`pc-name.local`), does the remote open by it?
 - Is it convenient to build a panel in the editor and to record shortcuts?
 - An evening of play with a real panel: is a delay noticeable, are there missed presses or stuck keys?

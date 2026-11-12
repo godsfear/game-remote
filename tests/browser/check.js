@@ -842,6 +842,15 @@ async function main() {
   )));
   ok('and the refusal does not read as a failed save',
     !/Not saved|Не сохранено/.test(await desk.locator('#save-state').textContent()));
+  // What the PC answers to a set of a newer version; the page says it in its language.
+  await desk.route('**/api/sets*', (route) => route.fulfill({
+    status: 422, contentType: 'application/json', body: '{"error":"newer_version"}',
+  }), { times: 1 });
+  const [newerChooser] = await Promise.all([desk.waitForEvent('filechooser'), desk.click('#import-set')]);
+  await newerChooser.setFiles(await download.path());
+  ok('a set made for a newer version asks to update the program', await until(async () => (
+    /Обновите программу|Update the program/.test(await desk.locator('#save-state').textContent())
+  )));
 
   // A game that cannot be saved keeps what the page has when another game arrives.
   await desk.click(`#game-list button[data-panel="${original.id}"]`);
@@ -961,13 +970,19 @@ async function main() {
     window.buzzes = [];
     Object.defineProperty(navigator, 'vibrate', { value: (pattern) => { window.buzzes.push(pattern); return true; } });
   });
+  let fakePc = null; // the fake PC's end of the connection
+  let activeAtWelcome; // what its "welcome" says about the active window; nothing at first
+  const upsFromPhone = [];
+  const downsFromPhone = [];
   await mock.routeWebSocket(/\/ws$/, (ws) => {
+    fakePc = ws;
     ws.onMessage((text) => {
       const message = JSON.parse(text);
       const reply = (data) => ws.send(JSON.stringify(data));
       if (message.type === 'hello') {
         reply({
           type: 'welcome',
+          active: activeAtWelcome,
           panels: [{
             id: 'u',
             name: 'Undecember',
@@ -976,9 +991,16 @@ async function main() {
               { id: 'a', label: 'Зелье', type: 'tap', color: '#c44f6a', image: null },
               { id: 'b', label: 'Навык', type: 'hold', color: null, image: null },
             ],
+          }, {
+            id: 'mock-x4',
+            name: 'X4',
+            columns: 2,
+            buttons: [{ id: 'map', label: 'Карта', type: 'tap', color: null, image: null }],
           }],
         });
       }
+      if (message.type === 'up') upsFromPhone.push(message.button);
+      if (message.type === 'down') downsFromPhone.push(message.button);
       if (message.type === 'ping') reply({ type: 'pong', t: message.t });
       if (message.type === 'down') reply({ type: 'ack', id: message.id, ok: false, reason: 'elevated' });
     });
@@ -990,6 +1012,68 @@ async function main() {
   ok('a rejected press says why', (await mock.locator('#toast').textContent()).includes('администратора'));
   ok('a rejected press feels different from an accepted one', (await mock.evaluate(() => JSON.stringify(window.buzzes))) === '[12,[30,60,30]]');
   await shot(mock, 'phone-rejected');
+
+  // ---- the phone follows the game whose window is active on the PC ----------
+  const shownGame = () => mock.locator('#panel-name').textContent();
+  const active = (...ids) => fakePc.send(JSON.stringify({ type: 'active', panels: ids }));
+  const choose = async (name) => {
+    await mock.locator('#panel-name').click();
+    await mock.locator('#panel-items button', { hasText: name }).click();
+  };
+  const skill = await mock.locator('.btn[data-button="b"]').boundingBox();
+  const finger = { x: skill.x + skill.width / 2, y: skill.y + skill.height / 2, id: 1 };
+  const mockCdp = await phone.newCDPSession(mock);
+  await mockCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  await mock.waitForSelector('.btn.down');
+  // The buttons change under the finger: what it was about to press must not be
+  // pressed. The page itself touches the new button the moment it appears, so
+  // the check does not depend on how fast this script is.
+  await mock.evaluate(() => {
+    const name = document.getElementById('panel-name');
+    new MutationObserver((changes, observer) => {
+      if (name.textContent !== 'X4') return;
+      observer.disconnect();
+      const map = document.querySelector('.btn[data-button="map"]');
+      for (const type of ['pointerdown', 'pointerup']) {
+        map.dispatchEvent(new PointerEvent(type, { pointerId: 7, bubbles: true }));
+      }
+      window.touchedAtOnce = true;
+    }).observe(name, { childList: true, characterData: true, subtree: true });
+  });
+  active('mock-x4');
+  await mock.waitForFunction(() => window.touchedAtOnce);
+  await mockCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  ok('the phone opens the game whose window became active', (await shownGame()) === 'X4');
+  ok('and lets go of what was held in the other game', await until(() => upsFromPhone.includes('b')));
+  ok('and says so with a pulse of its own',
+    (await mock.evaluate(() => JSON.stringify(window.buzzes))).endsWith(',[12,40,12,40,12]]'));
+  await mock.waitForTimeout(600);
+  ok('a touch right after the change presses nothing', !downsFromPhone.includes('map'));
+  await mock.locator('.btn[data-button="map"]').tap();
+  ok('a moment later the buttons work', await until(() => downsFromPhone.includes('map')));
+  await choose('Undecember');
+  active('mock-x4'); // what a reconnect in the middle of the game says again
+  await mock.waitForTimeout(300);
+  ok('the same news twice leaves the game the player chose', (await shownGame()) === 'Undecember');
+  active();
+  active('mock-x4');
+  ok('coming back to the window of the game opens it again', await until(async () => (await shownGame()) === 'X4'));
+  active();
+  active('mock-x4', 'u');
+  await mock.waitForTimeout(300);
+  ok('a game that is bound to the active window too stays open', (await shownGame()) === 'X4');
+
+  // The phone is taken in hand when the game is running already: "welcome" says so.
+  await choose('Undecember');
+  activeAtWelcome = null; // the PC cannot tell at this moment
+  await mock.reload();
+  await mock.waitForSelector('#status.online');
+  ok('a PC that does not know the active window leaves the game that was open',
+    await until(async () => (await shownGame()) === 'Undecember'));
+  activeAtWelcome = ['mock-x4'];
+  await mock.reload();
+  await mock.waitForSelector('#status.online');
+  ok('a phone that connects in the middle of a game opens it', await until(async () => (await shownGame()) === 'X4'));
 
   await browser.close();
 }
