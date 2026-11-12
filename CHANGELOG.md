@@ -1,12 +1,24 @@
 # Изменения / Changelog
 
-## Не выпущено / Unreleased
+## 0.4.0
 
+Каталог наборов: готовые наборы скачиваются с GitHub, а набор обновляется заменой.
+
+- У готовых наборов появилась страница: [Наборы](https://github.com/godsfear/game-remote/releases/tag/panel-sets). Скачайте zip своей игры и нажмите «Импортировать набор». Как прислать свой набор, описано в [sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md).
 - Импорт набора спрашивает, что делать, если игра с таким названием уже есть: добавить набор рядом или заменить им игру. Заменённая игра переносится в корзину программы.
+- После замены телефон и редактор сразу показывают новые картинки, даже если их файлы называются так же, как старые.
 - В наборе Star Citizen три экрана по шесть кнопок: к «Взлёт/Посадка» добавились «Полёт» и «Эмоции». Панель, которая уже стоит на ПК, не меняется: чтобы получить новые кнопки, импортируйте `star-citizen.zip` со страницы наборов и выберите «Заменить».
 
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте.
+
+The catalogue of sets: ready-made sets are downloaded from GitHub, and a set is updated by replacing it.
+
+- Ready-made sets have a page: [Sets](https://github.com/godsfear/game-remote/releases/tag/panel-sets). Download the zip of your game and press "Import a set". [sets/README.md](https://github.com/godsfear/game-remote/blob/main/sets/README.md) says how to send your own set.
 - An import of a set asks what to do when a game of that name is there already: add the set next to it or replace the game with it. A replaced game is moved to the trash folder of the program.
+- After a replacement the phone and the editor show the new pictures at once, also when their files have the names of the old ones.
 - The Star Citizen set has three screens of six buttons: "Flight" and "Emotes" joined "Takeoff/Landing". A panel that is already on the PC is not changed: to get the new buttons, import `star-citizen.zip` from the page of sets and choose "Replace".
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are.
 
 ## 0.3.0
 

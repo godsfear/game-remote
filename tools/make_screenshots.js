@@ -7,7 +7,7 @@
 // PYTHON chooses the interpreter (default: python).
 
 const { chromium } = require('playwright');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const net = require('net');
 const os = require('os');
@@ -15,8 +15,16 @@ const path = require('path');
 
 const out = path.join(__dirname, '..', 'docs', 'img');
 const python = process.env.PYTHON || 'python';
-// The ready-made panel takes its labels from the system language of the first start.
-const LANGUAGES = { ru: 'ru_RU.UTF-8', en: 'en_US.UTF-8' };
+const LANGUAGES = ['ru', 'en'];
+// Puts the ready-made panel into a data folder in the language of the picture.
+// A first start would take the language of this PC for it.
+const SEED = `import sys
+from pathlib import Path
+from game_remote.panels import SAMPLE_ID, PanelStore, read_set, sample_dir
+store = PanelStore(Path(sys.argv[1]) / 'panels')
+store.root.mkdir()
+store.install_set(read_set(sample_dir(SAMPLE_ID)), SAMPLE_ID, sys.argv[2])
+`;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -30,15 +38,15 @@ function freePort() {
   });
 }
 
-// One language: a first start in an empty data folder, as a new user sees it.
+// One language: the program with the ready-made panel alone, as a new user sees it.
 async function shoot(browser, language) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'game-remote-shots-'));
   const editor = `http://127.0.0.1:${await freePort()}`;
   const remote = `http://127.0.0.1:${await freePort()}`;
+  execFileSync(python, ['-c', SEED, dataDir, language]);
+  fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ samples: ['star-citizen'] }));
   const env = {
     ...process.env,
-    LANG: LANGUAGES[language],
-    LC_ALL: '',
     GAME_REMOTE_DATA_DIR: dataDir,
     GAME_REMOTE_EDITOR_PORT: new URL(editor).port,
     GAME_REMOTE_REMOTE_PORT: new URL(remote).port,
@@ -101,7 +109,7 @@ async function main() {
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch();
   try {
-    for (const language of Object.keys(LANGUAGES)) await shoot(browser, language);
+    for (const language of LANGUAGES) await shoot(browser, language);
   } finally {
     await browser.close();
   }
