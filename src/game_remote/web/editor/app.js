@@ -27,6 +27,7 @@ const el = Object.fromEntries([
   'screens-hint', 'preview-screens', 'button-screen', 'button-screen-field',
   'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
   'same-dialog', 'same-text', 'update', 'update-text', 'check-updates',
+  'toggle-on', 'toggle-on-field',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -59,6 +60,9 @@ let saveTimer = 0;
 let saving = null; // the save that runs now, as a promise
 let savingCheck = false; // the box of the update check is being saved
 const dirty = new Set(); // ids of panels with changes not yet on the PC
+
+// The name of each kind of button; its hint has the same key with "Hint".
+const TYPE_TEXTS = { tap: 'editor.typeTap', hold: 'editor.typeHold', toggle: 'editor.typeToggle' };
 
 const currentPanel = () => panels.find((panel) => panel.id === currentId) || null;
 const selectedButton = () => currentPanel()?.buttons.find((b) => b.id === selectedId) || null;
@@ -155,6 +159,8 @@ function forFile(panel) {
       label: button.label,
       keys: button.keys,
       type: button.type,
+      // Only a toggle starts on, and the file says so only when it does.
+      ...(button.type === 'toggle' && button.on ? { on: true } : {}),
       color: button.color || null,
       image: button.image || null,
       screen: button.screen || 0,
@@ -471,7 +477,7 @@ function renderButtons() {
     if (button.color) swatch.style.setProperty('--color', button.color);
     const name = node('span', button.label ? 'name' : 'name unnamed', button.label || t('editor.noLabel'));
     const keys = node('span', button.keys ? 'keys' : 'keys missing', button.keys ? comboLabel(button.keys) : t('editor.noKeys'));
-    const kind = node('span', 'kind', t(button.type === 'hold' ? 'editor.typeHold' : 'editor.typeTap'));
+    const kind = node('span', 'kind', t(TYPE_TEXTS[button.type] || TYPE_TEXTS.tap));
     const move = node('span', 'move');
     for (const [step, sign, key] of [[-1, '↑', 'editor.moveUp'], [1, '↓', 'editor.moveDown']]) {
       const arrow = node('button', '', sign);
@@ -577,7 +583,9 @@ function fillButtonForm() {
   for (const choice of el['button-type'].children) {
     choice.setAttribute('aria-pressed', String(choice.dataset.type === button.type));
   }
-  el['type-hint'].textContent = t(button.type === 'hold' ? 'editor.typeHoldHint' : 'editor.typeTapHint');
+  el['type-hint'].textContent = t(`${TYPE_TEXTS[button.type] || TYPE_TEXTS.tap}Hint`);
+  el['toggle-on-field'].hidden = button.type !== 'toggle';
+  el['toggle-on'].checked = Boolean(button.on);
   for (const swatch of el.colors.querySelectorAll('button')) {
     swatch.setAttribute('aria-pressed', String((swatch.dataset.color || null) === (button.color || null)));
   }
@@ -1052,6 +1060,12 @@ for (const choice of el['button-type'].children) {
     if (button.keys) changed();
   });
 }
+el['toggle-on'].addEventListener('change', () => {
+  const button = selectedButton();
+  button.on = el['toggle-on'].checked;
+  renderPreview();
+  if (button.keys) changed();
+});
 for (const box of el.manual.querySelectorAll('input[data-mod]')) box.addEventListener('change', manualChanged);
 el['manual-key'].addEventListener('change', manualChanged);
 el['duplicate-button'].addEventListener('click', duplicateButton);

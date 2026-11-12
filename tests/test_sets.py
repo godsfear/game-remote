@@ -61,6 +61,16 @@ def test_a_set_is_packed_into_a_zip_the_program_imports(tmp_path):
     assert store.panels["elite"].panel.buttons[0].label == "Шасси"
 
 
+def test_the_page_says_which_version_a_set_with_toggles_needs(tmp_path):
+    """A version before toggles answers such a set with an error nobody understands."""
+    buttons = [{"id": "gear", "label": "Gear", "keys": "KeyN", "type": "toggle"}]
+    write_set(tmp_path / "sets", panel={**ELITE, "buttons": buttons})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "sets",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.6.0 or newer")
+    assert build_sets.main(["--help"]) == 2  # and an option is not taken for a folder
+
+
 @pytest.mark.parametrize(
     ("name", "panel", "files", "problem"),
     [

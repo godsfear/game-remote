@@ -11,6 +11,9 @@ const VIBRATE_STORE = 'gameRemote.vibrate';
 const NOTICE_AFTER_MS = 4000; // a short hiccup needs no explanation
 const PING_EVERY_MS = 1000;
 const PONG_TIMEOUT_MS = 3000;
+// A toggle touched this long changes its light and sends no key. Long enough
+// for a slow, firm press to stay a press.
+const FLIP_AFTER_MS = 1000;
 const CLOSE_BAD_KEY = 4401;
 const CLOSE_BAD_CODE = 4403;
 
@@ -56,7 +59,8 @@ let delayMs = null; // time of the last ping to the PC and back
 let offlineSince = 0; // when the connection was lost; 0 while it is fine
 let vibration = store.get(VIBRATE_STORE) !== 'off';
 let toastTimer = 0;
-// button id -> { pointerId, node } for every button a finger is on right now
+// button id -> { pointerId, node, timer, flipped } for every button a finger is
+// on right now; the last two belong to a toggle
 const pressed = new Map();
 // message id -> button node, to mark the button when the PC rejects a press
 const waiting = new Map();
@@ -232,6 +236,15 @@ function onMessage(message) {
     render();
   } else if (message.type === 'released') {
     dropAllPresses(); // the game lost focus and the PC let go of the held keys
+  } else if (message.type === 'lit') {
+    // A toggle was switched, from this phone or another one.
+    const panel = panels.find((candidate) => candidate.id === message.panel);
+    const button = panel?.buttons.find((candidate) => candidate.id === message.button);
+    if (!button) return;
+    button.on = message.on;
+    if (panel !== currentPanel()) return;
+    const node = [...el.grid.children].find((child) => child.dataset.button === button.id);
+    if (node) node.setAttribute('aria-pressed', String(Boolean(button.on)));
   } else if (message.type === 'pong') {
     lastPong = performance.now();
     if (typeof message.t === 'number') delayMs = Math.max(0, Math.round(lastPong - message.t));
@@ -263,36 +276,65 @@ setInterval(() => {
 
 // ---- buttons ---------------------------------------------------------------
 
-function press(button, node, pointerId) {
-  if (pressed.has(button.id) || !online) return;
-  pressed.set(button.id, { pointerId, node });
-  node.classList.add('down');
+// Tells the PC what happened to a button; the PC answers whether it took it.
+function tell(type, button, node) {
   const id = nextId++;
   waiting.set(id, node);
   if (waiting.size > 50) waiting.delete(waiting.keys().next().value);
-  send({ type: 'down', id, panel: currentPanel().id, button: button.id });
+  send({ type, id, panel: currentPanel().id, button: button.id });
+}
+
+function press(button, node, pointerId) {
+  if (pressed.has(button.id) || !online) return;
+  const entry = { pointerId, node };
+  pressed.set(button.id, entry);
+  node.classList.add('down');
+  if (button.type === 'toggle') {
+    // A toggle acts when the finger leaves it. A long touch sends no key: it
+    // only sets the light right when the light and the game went apart.
+    entry.timer = setTimeout(() => {
+      entry.flipped = true;
+      tell('flip', button, node);
+      buzz(80); // one long pulse: two short ones mean a press the PC refused
+    }, FLIP_AFTER_MS);
+    return;
+  }
+  tell('down', button, node);
   buzz(12);
 }
 
-function release(button, pointerId) {
+// `lifted` is false when the touch was taken away, not ended by the finger.
+function release(button, pointerId, lifted) {
   const entry = pressed.get(button.id);
   if (!entry || entry.pointerId !== pointerId) return;
   pressed.delete(button.id);
   entry.node.classList.remove('down');
+  if (button.type === 'toggle') {
+    clearTimeout(entry.timer);
+    if (lifted && !entry.flipped) {
+      tell('down', button, entry.node);
+      buzz(12);
+    }
+    return;
+  }
   send({ type: 'up', id: nextId++, panel: currentPanel().id, button: button.id });
 }
 
 // Forget every press without telling the PC: used when the connection is gone
 // or the panel changed, where the PC has already released the keys.
 function dropAllPresses() {
-  for (const { node } of pressed.values()) node.classList.remove('down');
+  for (const { node, timer } of pressed.values()) {
+    clearTimeout(timer);
+    node.classList.remove('down');
+  }
   pressed.clear();
   waiting.clear();
 }
 
 function releaseAll() {
   const panel = currentPanel();
-  for (const [buttonId, { node }] of pressed) {
+  for (const [buttonId, { node, timer }] of pressed) {
+    clearTimeout(timer); // a toggle under a finger is left as it was
     node.classList.remove('down');
     if (panel) send({ type: 'up', id: nextId++, panel: panel.id, button: buttonId });
   }
@@ -300,7 +342,8 @@ function releaseAll() {
 }
 
 // Act on touch, not on release, and follow each finger separately so that
-// one button can be held while another is tapped.
+// one button can be held while another is tapped. A toggle is the exception:
+// it acts on release, so that a long touch can be told from a press.
 function listen(node, button) {
   node.addEventListener('pointerdown', (event) => {
     event.preventDefault();
@@ -308,7 +351,7 @@ function listen(node, button) {
     press(button, node, event.pointerId);
   });
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    node.addEventListener(type, (event) => release(button, event.pointerId));
+    node.addEventListener(type, (event) => release(button, event.pointerId, type === 'pointerup'));
   }
 }
 

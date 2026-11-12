@@ -92,7 +92,11 @@ class Button(BaseModel):
     # KeyboardEvent.code values joined by "+", e.g. "ControlLeft+KeyR".
     keys: str
     # tap: a short press. hold: the keys stay down while the finger is on the button.
-    type: Literal["tap", "hold"] = "tap"
+    # toggle: a short press too, and the button shows whether what it switches is on.
+    type: Literal["tap", "hold", "toggle"] = "tap"
+    # A toggle that is on when the program starts. The program does not see the
+    # game: it counts its own presses from this state.
+    on: bool = False
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     # A file in the panel folder.
     image: str | None = Field(default=None, pattern=IMAGE_PATTERN)
@@ -103,6 +107,12 @@ class Button(BaseModel):
     @classmethod
     def _normalise_keys(cls, value: str) -> str:
         return Combo.parse(value).serialize()
+
+    @model_validator(mode="after")
+    def _only_a_toggle_starts_on(self) -> Button:
+        if self.on and self.type != "toggle":
+            raise ValueError('"on" is for a button of the type "toggle"')
+        return self
 
     @property
     def combo(self) -> Combo:
@@ -207,6 +217,7 @@ class LoadedPanel:
                     "id": b.id,
                     "label": b.label,
                     "type": b.type,
+                    "on": b.on,
                     "color": b.color,
                     "image": self._url(b.image),
                     "screen": b.screen,
@@ -231,12 +242,16 @@ class LoadedPanel:
 
 def panel_text(panel: Panel) -> str:
     """The panel as ``panel.json`` holds it. A panel without screens is written
-    without their fields, so the version before screens still reads the file."""
+    without their fields, so the version before screens still reads the file;
+    the same goes for a button that is not a toggle that starts on."""
     data = panel.model_dump(exclude_none=True)
     if not panel.screens:
         del data["screens"]
-        for button in data["buttons"]:
+    for button in data["buttons"]:
+        if not panel.screens:
             del button["screen"]
+        if not button["on"]:
+            del button["on"]
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 

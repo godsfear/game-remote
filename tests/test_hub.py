@@ -1,7 +1,9 @@
 """The phone -> PC channel, driven through the remote app."""
 
+import asyncio
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 from conftest import phone_key, wait_for
@@ -38,6 +40,27 @@ def press(ws, kind, button, panel="demo", message_id=1):
 
 def trace(state):
     return state.backend.trace()
+
+
+def add_toggles(state, tmp_path, **panel_fields):
+    """Two toggles join the demo panel: "lights" starts off, "gear" starts on."""
+    panel = tmp_path / "panels" / "demo" / "panel.json"
+    data = json.loads(panel.read_text(encoding="utf-8"))
+    data["buttons"] = [button for button in data["buttons"] if button.get("type") != "toggle"]
+    data["buttons"] += [
+        {"id": "lights", "keys": "KeyL", "type": "toggle"},
+        {"id": "gear", "keys": "KeyN", "type": "toggle", "on": True},
+    ]
+    panel.write_text(json.dumps({**data, **panel_fields}), encoding="utf-8")
+    state.store.load()
+
+
+def toggles(panels):
+    return {b["id"]: b["on"] for b in panels[0]["buttons"] if b["type"] == "toggle"}
+
+
+def lit(button, on):
+    return {"type": "lit", "panel": "demo", "button": button, "on": on}
 
 
 def test_welcome_lists_panels_without_keys(state):
@@ -188,6 +211,87 @@ def test_bad_messages_close_the_connection(state, message):
 def foreground(exe, elevated=False):
     path = rf"C:\Games\{exe}"
     return lambda: ForegroundInfo(pid=1, exe_path=path, title="", elevated=elevated)
+
+
+def test_a_toggle_is_lit_by_a_press_and_every_phone_shows_it(state, tmp_path):
+    add_toggles(state, tmp_path)
+    with connect(state) as ws, connect(state, ("192.168.1.51", 50001)) as second:
+        assert toggles(hello(ws, state)["panels"]) == {"lights": False, "gear": True}
+        hello(second, state)
+        # The key is tapped like any other, and both phones learn the new state.
+        assert press(ws, "down", "lights") == lit("lights", True)
+        assert ws.receive_json() == {"type": "ack", "id": 1, "ok": True}
+        assert second.receive_json() == lit("lights", True)
+        wait_for(lambda: trace(state) == ["+KeyL", "-KeyL"])
+        # A toggle that starts on goes off with its first press.
+        assert press(second, "down", "gear") == lit("gear", False)
+        assert ws.receive_json() == lit("gear", False)
+    # The PC keeps the state: a phone that connects later gets it.
+    with connect(state) as later:
+        assert toggles(hello(later, state)["panels"]) == {"lights": True, "gear": False}
+        assert press(later, "down", "lights") == lit("lights", False)
+
+
+def test_a_long_touch_sets_the_light_right_without_a_key(state, tmp_path):
+    add_toggles(state, tmp_path, window="X4.exe")
+    state.hub.foreground = foreground("chrome.exe")  # the game is not even in front
+    with connect(state) as ws:
+        hello(ws, state)
+        assert press(ws, "flip", "lights") == lit("lights", True)
+        assert ws.receive_json() == {"type": "ack", "id": 1, "ok": True}
+        # Only a toggle has a light to set.
+        assert press(ws, "flip", "map", message_id=2)["reason"] == "unknown_button"
+        assert press(ws, "flip", "nothing", message_id=3)["reason"] == "unknown_button"
+    assert trace(state) == [] and len(state.hub.recent) == 0
+
+
+def test_a_press_that_was_rejected_leaves_the_light_as_it_was(state, tmp_path):
+    add_toggles(state, tmp_path, window="X4.exe")
+    state.hub.foreground = foreground("chrome.exe")
+    with connect(state) as ws:
+        hello(ws, state)
+        assert press(ws, "down", "lights")["reason"] == "not_focused"
+    assert toggles(state.hub.panels()) == {"lights": False, "gear": True}
+
+
+def test_a_toggle_changed_in_the_editor_shows_what_the_editor_says(state, tmp_path):
+    add_toggles(state, tmp_path)
+    with connect(state) as ws:
+        hello(ws, state)
+        press(ws, "down", "lights")
+        ws.receive_json()
+        press(ws, "down", "lights", message_id=2)  # on and off again
+        ws.receive_json()
+    assert toggles(state.hub.panels())["lights"] is False
+    # The editor now says that it starts on: the count of presses begins anew.
+    panel = tmp_path / "panels" / "demo" / "panel.json"
+    data = json.loads(panel.read_text(encoding="utf-8"))
+    data["buttons"][-2]["on"] = True
+    panel.write_text(json.dumps(data), encoding="utf-8")
+    state.store.load()
+    assert toggles(state.hub.panels()) == {"lights": True, "gear": True}
+
+
+def test_two_presses_at_once_leave_every_phone_with_the_state_of_the_pc(state, tmp_path):
+    add_toggles(state, tmp_path)
+    hub = state.hub
+    hub.connections = {name: SimpleNamespace(ws=name) for name in ("near", "far")}
+    heard = {"near": [], "far": []}
+
+    async def send(ws, message):
+        # The first news is slow on its way to the far phone: the second overtakes it.
+        await asyncio.sleep(0.05 if ws == "far" and message["on"] and not heard["far"] else 0)
+        heard[ws].append(message["on"])
+
+    hub._send = send
+    key, button = ("demo", "lights"), state.store.get("demo").panel.button("lights")
+
+    async def scenario():
+        await asyncio.gather(hub._flip(key, button), hub._flip(key, button))
+
+    asyncio.run(scenario())
+    assert heard["far"][:2] == [False, True]  # the news did arrive in the wrong order
+    assert heard["near"][-1] is heard["far"][-1] is toggles(hub.panels())["lights"] is False
 
 
 def test_press_is_rejected_when_another_window_has_focus(state, tmp_path):

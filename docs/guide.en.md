@@ -36,13 +36,13 @@ The ready-made Star Citizen panel presses these keys:
 | --- | --- | --- |
 | Takeoff/Landing | Flight Ready | right Alt + R |
 | | ATC | left Alt + N |
-| | Landing gear | N |
-| | Lights | L |
-| | VTOL | K |
+| | Landing gear | N, toggle |
+| | Lights | L, toggle |
+| | VTOL | K, toggle |
 | | Map | F2 |
 | Flight | SCM ↔ NAV | B, hold |
-| | Cruise control | left Alt + C |
-| | Coupled ↔ Decoupled | C |
+| | Cruise control | left Alt + C, toggle |
+| | Coupled ↔ Decoupled | C, toggle |
 | | Scan | V |
 | | Radar ping | Tab, hold |
 | | Camera | F4 |
@@ -53,13 +53,15 @@ The ready-made Star Citizen panel presses these keys:
 | | Laugh | right Ctrl + B |
 | | Dance | right Ctrl + Y |
 
-The buttons marked "hold" keep the key down while the finger is on the button. Compare the keys with the settings of the game: where they differ or are not set there, change them in the editor or set them in the game. The panel is not tied to the window of the game, so the first check in Notepad works; the card of the game ties it. The panel is installed once: when it is deleted, it does not come back. Game Remote is not affiliated with the developers of Star Citizen.
+The buttons marked "hold" keep the key down while the finger is on the button. The buttons marked "toggle" are lit while what they switch is on; "Landing gear" and "Coupled" are lit from the start, because a ship appears with its gear down and coupled. Compare the keys with the settings of the game: where they differ or are not set there, change them in the editor or set them in the game. The panel is not tied to the window of the game, so the first check in Notepad works; the card of the game ties it. The panel is installed once: when it is deleted, it does not come back. Game Remote is not affiliated with the developers of Star Citizen.
 
 ## The remote on the phone
 
 The "⋮" button in the top right corner opens the settings of this device: "Full screen" hides the address bar of the browser, "Vibration on touch" turns the feedback on and off. The same place shows how many milliseconds a signal takes to the PC and back. An accepted press gives one short buzz, a rejected one gives two, and the reason appears at the bottom.
 
 When a game has several screens of buttons, tabs appear under its name: a touch of a tab shows the other buttons at once. The remote remembers which screen was open for each game. When the screen changes, the buttons you were holding are released.
+
+A toggle button presses its key when you lift the finger, and is lit after that: a green frame and a lamp in the corner. The next press puts it out. The PC remembers the light, so it is the same on every device and is not lost when the phone connects again; after the program is started again it is back at its start state. The program does not see the game, it counts only its own presses: when you switch something from the keyboard or the game resets a mode by itself, the light and the game go apart. Then keep the finger on the button for about a second: the light changes and no key is pressed. The phone answers with one long pulse.
 
 To open the remote with one tap, add the page to the home screen from the menu of the browser: it has its own icon. The page is served over plain `http`, so Android makes a shortcut, not a separate app: the remote opens in a browser tab, and full screen is turned on with the button in the settings.
 
@@ -71,7 +73,7 @@ The page on the PC is the editor. The list of games is on the left, the buttons 
 
 1. Press "Add a game" and type its name.
 2. Press "Add a button", type the label, then press "Record" and press the key or the shortcut on the keyboard. Shortcuts that the browser keeps for itself (`Ctrl+W`, `Alt+Tab`) are set in the block "Choose by hand".
-3. Choose what a touch does, "Tap" or "Hold", then the colour of the button and, if you like, a picture. PNG, JPEG and WebP work; the editor makes a large picture smaller. The label stays visible on top of the picture.
+3. Choose what a touch does, "Tap", "Hold" or "Toggle", then the colour of the button and, if you like, a picture. PNG, JPEG and WebP work; the editor makes a large picture smaller. The label stays visible on top of the picture.
 4. The arrows or dragging in the list change the order of the buttons, the "−" and "+" buttons change the number of columns.
 5. When there are many buttons, put them on screens: "Add a screen" above the list of buttons. The tabs switch the screen, the field under them renames the current screen, a new button lands on the open screen. The field "Screen" in the settings of a button moves it to another screen. "Delete the screen" deletes the screen with its buttons. There can be up to eight screens.
 
@@ -118,7 +120,8 @@ An example, `panels\x4\panel.json`:
 | `id` | The name of the button inside the panel: Latin letters, digits, `-` and `_`. It is not repeated |
 | `label` | The label, up to 40 characters |
 | `keys` | A key, or a shortcut joined with `+`. The modifiers are pressed first |
-| `type` | `tap` is a short press (the default). `hold` keeps the key down while the finger is on the button |
+| `type` | `tap` is a short press (the default). `hold` keeps the key down while the finger is on the button. `toggle` is a short press after which the button is lit until the next press |
+| `on` | For `toggle` only: `true` when the button is lit from the start. `false` by default |
 | `color` | The colour of the background as `#rrggbb` |
 | `image` | The name of a PNG, JPEG or WebP file in the folder of the panel |
 | `cover` | A field of the panel, not of a button. The cover of the game: the name of a file in the folder of the panel |

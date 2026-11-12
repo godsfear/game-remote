@@ -17,7 +17,7 @@ Game Remote превращает телефон или планшет в пул�
 - **На телефон ничего не ставится.** Пульт открывается в браузере по QR-коду.
 - **Один файл на ПК.** `GameRemote.exe` запускается двойным щелчком, Python не нужен.
 - **Своя панель у каждой игры:** подписи, цвета, картинки, фон, сочетания клавиш, порядок кнопок.
-- **Кнопки «нажать» и «держать»,** можно нажимать несколько сразу.
+- **Кнопки «нажать», «держать» и «переключатель»,** можно нажимать несколько сразу. Переключатель светится, пока включено то, что он включает.
 - **Экраны:** кнопки одной игры раскладываются по нескольким экранам, на телефоне их переключают вкладки.
 - **Наборы:** игру можно сохранить в один файл и поделиться ею, чужой набор — импортировать. У набора могут быть подписи на нескольких языках. Готовые наборы сообщества можно [скачать](https://github.com/godsfear/game-remote/releases/tag/panel-sets); как добавить свой, написано в папке [sets](sets/README.md).
 - **Привязка к окну игры:** нажатие не попадёт в чат или браузер.
@@ -55,7 +55,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 - **Nothing to install on the phone.** The remote opens in the browser from a QR code.
 - **One file on the PC.** `GameRemote.exe` starts with a double click; no Python needed.
 - **A panel per game:** labels, colours, pictures, a background, keyboard shortcuts, button order.
-- **Tap and hold buttons,** several at a time.
+- **Tap, hold and toggle buttons,** several at a time. A toggle is lit while what it switches is on.
 - **Screens:** the buttons of one game can be grouped into several screens; tabs on the phone switch between them.
 - **Sets:** a game can be saved into one file and shared, and someone else's set imported. A set can carry its labels in several languages. Ready-made sets from the community can be [downloaded](https://github.com/godsfear/game-remote/releases/tag/panel-sets); the folder [sets](sets/README.md) says how to add yours.
 - **Bound to the game's window:** a press never lands in a chat or a browser.

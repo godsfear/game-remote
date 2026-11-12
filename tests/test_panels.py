@@ -13,6 +13,7 @@ from game_remote.panels import (
     Panel,
     PanelStore,
     demo_panel,
+    panel_text,
     read_set,
     unpack_set,
 )
@@ -48,9 +49,9 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     assert [(b.id, b.keys, b.type) for b in loaded.panel.buttons if b.screen == 0] == [
         ("flight-ready", "AltRight+KeyR", "tap"),
         ("atc", "AltLeft+KeyN", "tap"),
-        ("landing-gear", "KeyN", "tap"),
-        ("headlights", "KeyL", "tap"),
-        ("vtol", "KeyK", "tap"),
+        ("landing-gear", "KeyN", "toggle"),
+        ("headlights", "KeyL", "toggle"),
+        ("vtol", "KeyK", "toggle"),
         ("starmap", "F2", "tap"),
     ]
     # Not tied to the game's window, so the first check in Notepad works.
@@ -60,6 +61,16 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     assert len(loaded.panel.screens) == 3
     # The keys the game wants held down are held for as long as the finger is.
     assert [b.id for b in loaded.panel.buttons if b.type == "hold"] == ["master-mode", "radar-ping"]
+    # What the game switches on and off is a toggle; a ship starts with its gear
+    # down and coupled, so those two are lit at first.
+    toggles = {b.id: b.on for b in loaded.panel.buttons if b.type == "toggle"}
+    assert toggles == {
+        "landing-gear": True,
+        "headlights": False,
+        "vtol": False,
+        "cruise-control": False,
+        "coupled": True,
+    }
     assert loaded.image_path(loaded.panel.cover).read_bytes()[:2] == b"\xff\xd8"
     pictures = [b.image for b in loaded.panel.buttons] + [loaded.panel.background]
     assert len(set(pictures)) == 19
@@ -150,9 +161,29 @@ def test_phone_never_receives_key_combos(tmp_path):
     public = store.public()
     assert public[0]["id"] == "x4" and public[0]["columns"] == 3
     assert public[0]["buttons"] == [
-        {"id": "map", "label": "Map", "type": "tap", "color": None, "image": None, "screen": 0}
+        {
+            "id": "map",
+            "label": "Map",
+            "type": "tap",
+            "on": False,
+            "color": None,
+            "image": None,
+            "screen": 0,
+        }
     ]
     assert "KeyM" not in json.dumps(public)
+
+
+def test_the_file_says_that_a_toggle_starts_on_only_when_it_does():
+    buttons = [
+        {"id": "gear", "keys": "KeyN", "type": "toggle", "on": True},
+        {"id": "lights", "keys": "KeyL", "type": "toggle"},
+        {"id": "map", "keys": "KeyM"},
+    ]
+    written = json.loads(panel_text(Panel.model_validate({"name": "x", "buttons": buttons})))
+    # A file without toggles that start on is one the versions before toggles read.
+    assert [button.get("on") for button in written["buttons"]] == [True, None, None]
+    assert Panel.model_validate(written).buttons[0].on is True
 
 
 def test_buttons_are_grouped_into_screens(tmp_path):
@@ -205,7 +236,9 @@ def test_keys_are_normalised_modifiers_first():
         {"name": "x", "buttons": [{"id": "a", "keys": ""}]},
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA"}, {"id": "a", "keys": "KeyB"}]},
         {"name": "x", "buttons": [{"id": "a b", "keys": "KeyA"}]},
-        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "type": "toggle"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "type": "macro"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "type": "toggle", "on": "maybe"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "on": True}]},
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "image": "../secret.png"}]},
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "color": "red"}]},
         {"name": "x", "buttons": [], "columns": 0},

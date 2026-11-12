@@ -21,7 +21,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from game_remote.panels import MAX_SET_BYTES, PANEL_FILE, PanelSet, PanelStore, read_set
+from game_remote.panels import MAX_SET_BYTES, PANEL_FILE, Panel, PanelSet, PanelStore, read_set
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = (ROOT / "sets", ROOT / "src" / "game_remote" / "samples")
@@ -77,6 +77,14 @@ def build(folder: Path) -> tuple[bytes, PanelSet]:
     return data, panel_set
 
 
+def needs(panel: Panel) -> str | None:
+    """The first version of the program that reads the set, when not every
+    version does. An older one answers such a set with an error nobody
+    understands, so the page of sets says it."""
+    # Toggle buttons came with 0.6.0.
+    return "0.6.0" if any(button.type == "toggle" for button in panel.buttons) else None
+
+
 def catalogue(sources: tuple[Path, ...] = SOURCES) -> list[Path]:
     """The folders of the sets, by name."""
     folders = [path for source in sources if source.is_dir() for path in source.iterdir()]
@@ -84,7 +92,7 @@ def catalogue(sources: tuple[Path, ...] = SOURCES) -> list[Path]:
 
 
 def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
-    if len(argv) > 1:
+    if len(argv) > 1 or (argv and argv[0].startswith("-")):  # "--help" is not a folder
         print(__doc__)
         return 2
     target = Path(argv[0]) if argv else None
@@ -107,7 +115,12 @@ def main(argv: list[str], sources: tuple[Path, ...] = SOURCES) -> int:
         if target is not None:
             (target / f"{folder.name}.zip").write_bytes(data)
             languages = ", ".join([panel_set.panel.language, *panel_set.translations])
-            lines.append(f"- **{panel_set.panel.name}** — `{folder.name}.zip` — {languages}")
+            line = f"- **{panel_set.panel.name}** — `{folder.name}.zip` — {languages}"
+            version = needs(panel_set.panel)
+            if version:
+                line += f" — нужен Game Remote {version} или новее"
+                line += f" / needs Game Remote {version} or newer"
+            lines.append(line)
     if target is not None:
         text = INDEX_HEAD.format(repository=REPOSITORY) + "\n" + "\n".join(lines) + "\n"
         (target / INDEX).write_text(text, encoding="utf-8")

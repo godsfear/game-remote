@@ -15,6 +15,8 @@ Protocol (JSON over WebSocket):
     PC -> phone   {"type": "panels", "panels": [...]}        panels were edited
     PC -> phone   {"type": "settings", "language": "ru" | null}
     PC -> phone   {"type": "released"}                       held keys were let go
+    phone -> PC   {"type": "flip", "id": 9, "panel": "x4", "button": "lights"}
+    PC -> phone   {"type": "lit", "panel": "x4", "button": "lights", "on": true}
 
 "language" is the interface language chosen on the PC; null means that the
 phone uses the language of its own browser.
@@ -27,6 +29,11 @@ key, which is also what a phone gets when it is removed on the PC.
 The phone names a button, never keys: the key combo is looked up on the PC.
 What "down" does depends on the button's type. A phone that stops talking
 for HEARTBEAT_TIMEOUT seconds is dropped and every key it holds is released.
+
+A toggle button is lit or not. The PC keeps that state, so every phone shows
+the same: "down" presses the keys and changes it, "flip" changes it without a
+key, for the case the light and the game went apart. Both are told to every
+phone with "lit"; "welcome" and "panels" carry the state in "on" of the button.
 """
 
 from __future__ import annotations
@@ -47,7 +54,7 @@ from game_remote.access import PairingCodes
 from game_remote.devices import Device, DeviceStore
 from game_remote.input import Combo, InputController, InputError
 from game_remote.input.windows import ForegroundInfo, input_blocked_by_elevation
-from game_remote.panels import PanelStore
+from game_remote.panels import Button, PanelStore
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +96,10 @@ class RemoteHub:
         self.language: str | None = None
         self.connections: dict[str, Connection] = {}
         self.recent: deque[dict] = deque(maxlen=30)
+        # Toggles that were pressed: (panel, button) -> (the state its panel file
+        # starts it with, the state now). Lives as long as the program runs.
+        # ponytail: entries of deleted buttons stay; a few bytes each.
+        self.lit: dict[tuple[str, str], tuple[bool, bool]] = {}
         self._ids = itertools.count(1)
         self._taps: set[asyncio.Task] = set()
         # Process that owned the active window when the last key was held down.
@@ -114,7 +125,7 @@ class RemoteHub:
             log.info("%s connected from %s as %r", conn.id, address, device.name)
             if key is not None:
                 await self._send(ws, {"type": "paired", "key": key})
-            welcome = {"type": "welcome", "panels": self.store.public(), "language": self.language}
+            welcome = {"type": "welcome", "panels": self.panels(), "language": self.language}
             await self._send(ws, welcome)
             while conn.id in self.connections:
                 message = await self._receive(ws, self.heartbeat_timeout)
@@ -186,8 +197,42 @@ class RemoteHub:
             with contextlib.suppress(RuntimeError):
                 await ws.close(code=code)
 
+    async def _broadcast(self, message: dict) -> None:
+        for conn in list(self.connections.values()):
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await self._send(conn.ws, message)
+
+    # -- toggles ----------------------------------------------------------------
+
+    def panels(self) -> list[dict]:
+        """The panels as the phones get them: a toggle is on or off as it is now."""
+        panels = self.store.public()
+        for panel in panels:
+            for button in panel["buttons"]:
+                if button["type"] == "toggle":
+                    button["on"] = self._is_lit((panel["id"], button["id"]), button["on"])
+        return panels
+
+    def _is_lit(self, key: tuple[str, str], start: bool) -> bool:
+        known = self.lit.get(key)
+        # A state that was counted from another start is forgotten: the button
+        # was changed in the editor, and what the editor says shows.
+        return known[1] if known and known[0] == start else start
+
+    async def _flip(self, key: tuple[str, str], button: Button) -> None:
+        lit = not self._is_lit(key, button.on)
+        self.lit[key] = (button.on, lit)
+        # Another press may come while the phones are being told, and reach
+        # some of them first: the telling ends with the state the PC has.
+        while True:
+            await self._broadcast({"type": "lit", "panel": key[0], "button": key[1], "on": lit})
+            now = self._is_lit(key, button.on)
+            if now == lit:
+                return
+            lit = now
+
     async def broadcast_panels(self) -> None:
-        message = {"type": "panels", "panels": self.store.public()}
+        message = {"type": "panels", "panels": self.panels()}
         for conn in list(self.connections.values()):
             # A removed or changed button must not stay held.
             self._release_connection(conn)
@@ -223,10 +268,7 @@ class RemoteHub:
 
     async def set_language(self, language: str | None) -> None:
         self.language = language
-        message = {"type": "settings", "language": language}
-        for conn in list(self.connections.values()):
-            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
-                await self._send(conn.ws, message)
+        await self._broadcast({"type": "settings", "language": language})
 
     # -- messages -------------------------------------------------------------
 
@@ -234,8 +276,8 @@ class RemoteHub:
         kind = message.get("type")
         if kind == "ping":
             await self._send(conn.ws, {"type": "pong", "t": message.get("t")})
-        elif kind in ("down", "up"):
-            reason = self._press(conn, kind, message.get("panel"), message.get("button"))
+        elif kind in ("down", "up", "flip"):
+            reason = await self._press(conn, kind, message.get("panel"), message.get("button"))
             ack = {"type": "ack", "id": message.get("id"), "ok": reason is None}
             if reason:
                 ack["reason"] = reason
@@ -243,7 +285,7 @@ class RemoteHub:
         else:
             raise ValueError(f"unknown message type {kind!r}")
 
-    def _press(
+    async def _press(
         self, conn: Connection, kind: str, panel_id: object, button_id: object
     ) -> str | None:
         """Carry out one button event. Returns None on success or the reason it was rejected."""
@@ -265,6 +307,12 @@ class RemoteHub:
         button = loaded.panel.button(button_id) if loaded else None
         if loaded is None or button is None:
             return "unknown_button"
+        if kind == "flip":
+            # Sets the light right and presses nothing, whatever window is active.
+            if button.type != "toggle":
+                return "unknown_button"
+            await self._flip(key, button)
+            return None
         if key in conn.held:
             return None  # already down; a repeated "down" changes nothing
 
@@ -285,6 +333,8 @@ class RemoteHub:
             except InputError:
                 log.exception("SendInput failed for %s", combo)
                 reason = "input_error"
+        if reason is None and button.type == "toggle":
+            await self._flip(key, button)
         self.recent.appendleft(
             {
                 "time": time.time(),

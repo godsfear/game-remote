@@ -185,6 +185,27 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     ok('ATC presses left Alt + N', await until(async () => (await status()).recent[0]?.keys === 'Alt+N'), JSON.stringify((await status()).recent[0]));
     ok('no key stays down after the taps', await until(async () => (await held()) === '[]'));
 
+    // The marks of a button lie above its picture. A strip of its left edge and
+    // its top right corner, as pictures: they change when the mark does.
+    const strips = async (view, node) => {
+      await view.waitForFunction(() => [...document.querySelectorAll('.btn img')].every((img) => img.complete && img.naturalWidth));
+      const box = await node.boundingBox();
+      const edge = { x: box.x, y: box.y + box.height / 2 - 10, width: 8, height: 20 };
+      const corner = { x: box.x + box.width - 60, y: box.y, width: 60, height: 40 };
+      return [await view.screenshot({ clip: edge }), await view.screenshot({ clip: corner })];
+    };
+    const gear = page.locator('.btn[data-button="landing-gear"]');
+    ok('a ship starts with its gear down: the toggle is lit', (await gear.getAttribute('aria-pressed')) === 'true');
+    const lit = await strips(page, gear);
+    await gear.tap();
+    await page.waitForSelector('.btn[data-button="landing-gear"][aria-pressed="false"]');
+    await sleep(300); // the look of a pressed button fades
+    const dark = await strips(page, gear);
+    ok('the frame of a lit toggle shows on a picture', !lit[0].equals(dark[0]));
+    ok('and so does its lamp', !lit[1].equals(dark[1]));
+    await gear.tap();
+    await page.waitForSelector('.btn[data-button="landing-gear"][aria-pressed="true"]');
+
     await page.setViewportSize({ width: 915, height: 412 });
     await page.waitForSelector('#grid.wide');
     layout = await tiles(page, '#grid');
@@ -206,6 +227,11 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     ok('the editor shows the background and the shape', (await desk.locator('#background-thumb.set').count()) === 1
       && (await desk.locator('#shape [data-shape="square"]').getAttribute('aria-pressed')) === 'true');
     await shot(desk, 'editor-star-citizen');
+    const atc = desk.locator('#preview .btn[data-button="atc"]');
+    const unselected = await strips(desk, atc);
+    await atc.click();
+    await desk.waitForSelector('#preview .btn.selected[data-button="atc"]');
+    ok('the frame of the selected button shows on a picture', !unselected[0].equals((await strips(desk, atc))[0]));
 
     const saved = () => desk.waitForFunction(() => document.getElementById('save-state').textContent === 'Сохранено');
     await desk.locator('#shape [data-shape="fill"]').click();
@@ -339,6 +365,53 @@ async function main() {
     const video = document.getElementById('awake');
     return !video.paused && video.readyState >= 2 && video.videoWidth > 0;
   })));
+
+  // ---- phone: a toggle ---------------------------------------------------------
+  // "Пауза" becomes a toggle for a while: the key goes when the finger lifts,
+  // and the button is lit until the next press.
+  const demoPath = path.join(dataDir, 'panels', 'demo', 'panel.json');
+  const plainDemo = fs.readFileSync(demoPath, 'utf8');
+  const withToggle = JSON.parse(plainDemo);
+  withToggle.buttons.find((button) => button.id === 'pause').type = 'toggle';
+  fs.writeFileSync(demoPath, JSON.stringify(withToggle));
+  const lamp = page.locator('.btn.toggle[data-button="pause"]');
+  ok('a toggle is drawn unlit', await until(async () => (await lamp.getAttribute('aria-pressed')) === 'false'));
+  const pause = await center('pause');
+  const presses = async () => (await status()).recent.filter((press) => press.button === 'Пауза').length;
+  await touch('touchStart', [{ ...pause, id: 1 }]);
+  await sleep(250);
+  ok('a toggle waits for the finger to lift', (await presses()) === 0);
+  await touch('touchEnd', [{ ...pause, id: 1 }]);
+  ok('a toggle presses its key and lights up', await until(async () => (
+    (await presses()) === 1 && (await lamp.getAttribute('aria-pressed')) === 'true'
+  )));
+  await shot(page, 'phone-toggle');
+  await touch('touchStart', [{ ...pause, id: 1 }]);
+  ok('a long touch puts the light out', await until(async () => (await lamp.getAttribute('aria-pressed')) === 'false'));
+  await touch('touchEnd', [{ ...pause, id: 1 }]);
+  await sleep(250);
+  ok('and presses no key, during it or after', (await presses()) === 1);
+  // A touch that was taken away does nothing: no key, and no change of the light later.
+  const untouched = async () => (await presses()) === 1 && (await lamp.getAttribute('aria-pressed')) === 'false';
+  await touch('touchStart', [{ ...pause, id: 1 }]);
+  await touch('touchCancel', []);
+  await sleep(1400);
+  ok('a touch the system took away changes nothing', await untouched());
+  await touch('touchStart', [{ ...pause, id: 1 }]);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await sleep(1400);
+  await touch('touchEnd', [{ ...pause, id: 1 }]);
+  await sleep(250);
+  ok('nor does a touch during which the page was left', await untouched());
+  await touch('touchStart', [{ ...pause, id: 1 }]);
+  await touch('touchEnd', [{ ...pause, id: 1 }]);
+  await until(async () => (await lamp.getAttribute('aria-pressed')) === 'true');
+  await page.reload();
+  await page.waitForSelector('#status.online');
+  ok('the PC remembers the light for a phone that connects again',
+    await until(async () => (await lamp.getAttribute('aria-pressed')) === 'true'));
+  fs.writeFileSync(demoPath, plainDemo);
+  ok('the button is plain again', await until(async () => (await page.locator('.btn.toggle').count()) === 0));
 
   // ---- phone: settings of the device -----------------------------------------
   await page.locator('#menu-open').tap();
@@ -485,6 +558,22 @@ async function main() {
   ok('recorded shortcut is stored with modifiers first', game.buttons[0].keys === 'ControlLeft+KeyR'
     && game.buttons[0].type === 'hold' && game.buttons[0].color === '#2f9e62' && game.buttons[1].keys === 'KeyM');
   ok('preview is drawn by the same code as the phone', (await desk.locator('#preview .btn.hold .label').textContent()) === 'Связь');
+
+  // A toggle and the state it starts with.
+  ok('only a toggle offers a start state', await desk.locator('#toggle-on-field').isHidden());
+  await desk.click('#button-type [data-type="toggle"]');
+  await desk.check('#toggle-on');
+  await saved();
+  ok('a toggle that starts on is saved so', (await stored('game')).buttons[1].type === 'toggle'
+    && (await stored('game')).buttons[1].on === true);
+  ok('the preview shows it lit', (await desk.locator('#preview .btn.toggle[aria-pressed="true"]').count()) === 1);
+  await desk.uncheck('#toggle-on');
+  await saved();
+  const inFile = JSON.parse(fs.readFileSync(path.join(dataDir, 'panels', 'game', 'panel.json'), 'utf8')).buttons[1];
+  ok('a toggle that starts off has nothing about it in the file', inFile.type === 'toggle' && !('on' in inFile));
+  await shot(desk, 'pc-editor-toggle', { fullPage: true });
+  await desk.click('#button-type [data-type="tap"]');
+  await saved();
 
   await desk.locator('#button-list li').nth(1).locator('.move button').first().click();
   await desk.click('#columns-less');
