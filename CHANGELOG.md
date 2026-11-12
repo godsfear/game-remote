@@ -1,5 +1,27 @@
 # Изменения / Changelog
 
+## 0.8.0
+
+Макросы: одно касание нажимает несколько клавиш подряд.
+
+- Новый вид кнопки, «Макрос». Вместо одного сочетания у неё список шагов: в каждом клавиша или сочетание, сколько их держать и сколько ждать перед следующим шагом. Шагов может быть до 20, весь макрос длится не дольше 30 секунд. В редакторе шаги записываются с клавиатуры так же, как сочетание обычной кнопки.
+- Пока макрос идёт, его кнопка светится на всех телефонах. Касание светящейся кнопки останавливает макрос.
+- Макрос работает только у игры, которой задано окно («Выбрать окно» в настройках игры), и только пока это окно активно. Он прерывается, если вы переключились в другое окно, если телефон потерял связь, заблокирован или страница пульта свёрнута, а также по кнопке «Отпустить все клавиши» на странице ПК. Клавиши при этом отпускаются, а телефон показывает причину.
+- О наборе с макросами редактор при импорте сначала спрашивает: он называет число макросов и окно, в котором они нажимают клавиши. Импортируйте такой набор, только если доверяете его автору.
+- У файла панели новый формат. Программа записывает его номер в каждую панель и каждый набор, которые сохраняет, поэтому версия 0.7.0 на такие файлы отвечает «обновите программу», а более ранние версии их не читают. Панели прежних версий новая программа читает как раньше. Если собираетесь вернуться на старую версию, заранее скопируйте папку `%LOCALAPPDATA%\GameRemote\panels`.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+Macros: one touch presses several keys one after another.
+
+- A new kind of button, "Macro". In place of one shortcut it has a list of steps: each has a key or a shortcut, how long to hold it and how long to wait before the next step. There can be up to 20 steps, and the whole macro takes no longer than 30 seconds. The editor records the steps from the keyboard like the shortcut of a plain button.
+- While a macro runs its button is lit on every phone. A touch of the lit button stops the macro.
+- A macro works only for a game that has a window set ("Choose a window" in the settings of the game), and only while that window is active. It stops when you switch to another window, when the phone loses the connection, is locked or the page of the remote is left, and when "Release all keys" is pressed on the PC page. Its keys are let go then, and the phone says why.
+- About a set with macros the editor asks before it imports it: it names the number of macros and the window they press their keys in. Import such a set only if you trust its author.
+- The panel file has a new format. The program writes its number into every panel and every set it saves, so version 0.7.0 answers such files with "update the program", and earlier versions do not read them. The new program reads the panels of earlier versions as before. If you mean to go back to an old version, copy the folder `%LOCALAPPDATA%\GameRemote\panels` first.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.7.0
 
 Телефон сам открывает панель игры, в окно которой вы переключились на ПК.
