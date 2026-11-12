@@ -1,5 +1,7 @@
 # Руководство по Game Remote
 
+[English version](guide.en.md)
+
 Game Remote — это один файл `GameRemote.exe` на ПК с Windows и страница в браузере телефона. На ПК вы собираете панель кнопок для каждой игры, на телефоне нажимаете их, и программа отправляет в игру клавиши.
 
 ## Где взять exe
@@ -154,7 +156,7 @@ python tools/smoke_test.py dist/GameRemote.exe
 ```json
 {
   "name": "Star Citizen",
-  "screens": ["Взлёт/Посадка", "Полёт"],
+  "screens": ["Взлёт/Посадка", "Полёт", "Эмоции"],
   "labels": {
     "landing-gear": "Шасси",
     "headlights": "Фары"

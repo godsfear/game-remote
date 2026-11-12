@@ -79,7 +79,7 @@ A set presses the keys the game has by default. If you changed them in the game,
 | File | What for |
 | --- | --- |
 | `panel.json` | The buttons, the screens and the keys. It must say the language of the labels: `"language": "en"` |
-| `panel.ru.json` and others | Translations, one file per language. Optional. The [guide](../docs/guide.md#переводы-в-наборе) describes the format (in Russian) |
+| `panel.ru.json` and others | Translations, one file per language. Optional. The [guide](../docs/guide.en.md#translations-in-a-set) describes the format |
 | pictures | Only those the set shows: the cover, the background, the pictures of the buttons |
 | `README.md` | Your notes: where the pictures come from, which version of the game the keys are for. Optional; it does not go into the file of the set |
 

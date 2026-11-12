@@ -68,7 +68,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 3. A page with a QR code opens in the browser. Point the camera of a phone on the same Wi-Fi at it.
 4. The phone shows a ready-made Star Citizen panel. To build your own, press "Add a game".
 
-The full [guide](docs/guide.md) is in Russian.
+Details are in the [guide](docs/guide.en.md).
 
 ### Good to know
 
