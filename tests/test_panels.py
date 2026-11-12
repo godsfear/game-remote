@@ -45,7 +45,7 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     assert state.store.errors == {}
     loaded = state.store.panels[SAMPLE_ID]
     assert loaded.panel.name == "Star Citizen"
-    assert [(b.id, b.keys, b.type) for b in loaded.panel.buttons] == [
+    assert [(b.id, b.keys, b.type) for b in loaded.panel.buttons if b.screen == 0] == [
         ("flight-ready", "AltRight+KeyR", "tap"),
         ("atc", "AltLeft+KeyN", "tap"),
         ("landing-gear", "KeyN", "tap"),
@@ -55,12 +55,14 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     ]
     # Not tied to the game's window, so the first check in Notepad works.
     assert loaded.panel.window is None
-    # Two screens show how buttons are grouped: all six on the first, the second empty.
-    assert len(loaded.panel.screens) == 2
-    assert {b.screen for b in loaded.panel.buttons} == {0}
+    # Three screens show how buttons are grouped: six on each.
+    assert [[b.screen for b in loaded.panel.buttons].count(n) for n in range(3)] == [6, 6, 6]
+    assert len(loaded.panel.screens) == 3
+    # The keys the game wants held down are held for as long as the finger is.
+    assert [b.id for b in loaded.panel.buttons if b.type == "hold"] == ["master-mode", "radar-ping"]
     assert loaded.image_path(loaded.panel.cover).read_bytes()[:2] == b"\xff\xd8"
     pictures = [b.image for b in loaded.panel.buttons] + [loaded.panel.background]
-    assert len(set(pictures)) == 7
+    assert len(set(pictures)) == 19
     for name in pictures:
         assert loaded.image_path(name).read_bytes()[:2] == b"\xff\xd8", name
     public = loaded.public()

@@ -30,7 +30,8 @@ def save(image: Image.Image, target: Path) -> None:
 
 def star_citizen() -> None:
     target = SAMPLES / "star-citizen"
-    for source in sorted((ASSETS / "star-citizen-buttons-large").glob("*.jpg")):
+    # One folder of pictures for each screen of the panel.
+    for source in sorted(ASSETS.glob("star-citizen-*buttons*/*.jpg")):
         with Image.open(source) as image:
             save(
                 image.resize((BUTTON_SIDE, BUTTON_SIDE), Image.Resampling.LANCZOS),

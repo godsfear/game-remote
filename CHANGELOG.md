@@ -3,8 +3,10 @@
 ## Не выпущено / Unreleased
 
 - Импорт набора спрашивает, что делать, если игра с таким названием уже есть: добавить набор рядом или заменить им игру. Заменённая игра переносится в корзину программы.
+- В наборе Star Citizen три экрана по шесть кнопок: к «Взлёт/Посадка» добавились «Полёт» и «Эмоции». Панель, которая уже стоит на ПК, не меняется: чтобы получить новые кнопки, импортируйте `star-citizen.zip` со страницы наборов и выберите «Заменить».
 
 - An import of a set asks what to do when a game of that name is there already: add the set next to it or replace the game with it. A replaced game is moved to the trash folder of the program.
+- The Star Citizen set has three screens of six buttons: "Flight" and "Emotes" joined "Takeoff/Landing". A panel that is already on the PC is not changed: to get the new buttons, import `star-citizen.zip` from the page of sets and choose "Replace".
 
 ## 0.3.0
 
