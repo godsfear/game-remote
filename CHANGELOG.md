@@ -1,5 +1,25 @@
 # Изменения / Changelog
 
+## 0.10.0
+
+Автозапуск с Windows и два пояснения там, где программу было легко понять неправильно.
+
+- В редакторе внизу страницы появилась галочка «Запускать вместе с Windows». Когда она стоит, программа при входе в Windows стартует сама и появляется значком в трее, страница в браузере при этом не открывается. Для этого программа записывает одну строку в список автозагрузки вашей учётной записи; снимите галочку — и строка исчезнет. Галочка показывает то, что есть в Windows: если отключить Game Remote в «Диспетчере задач» или в «Параметрах», она тоже снимется. После обновления запустите новый `GameRemote.exe` один раз, и автозапуск переключится на него.
+- Автозапуск стартует программу без прав администратора. Если ваша игра идёт от администратора, программу по-прежнему нужно запускать вручную от его имени.
+- Долгое касание переключателя меняет только его подсветку и клавишу не нажимает; так было и раньше, но выглядело как сработавшее нажатие. Теперь телефон прямо пишет, что клавиша не нажата, а на странице ПК такое касание стоит в «Последних нажатиях» отдельной строкой.
+- Кнопка «Подключить ещё одно устройство» теперь называется «Показать QR-код», а под ней сказано, что этим же кодом можно снова открыть пульт на уже привязанном телефоне. Привязка при этом сохраняется: удалять телефон из списка, чтобы добраться до кода, не нужно.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+Start with Windows, and two explanations where the program was easy to misread.
+
+- The editor has a new box at the bottom of the page, "Start with Windows". While it is ticked, the program starts by itself when you sign in to Windows and shows its icon in the tray, without opening the page in the browser. For that the program writes one line into the startup list of your account; clear the box and the line is gone. The box shows what Windows has: when you switch Game Remote off in the Task Manager or in Settings, it is cleared too. After an update run the new `GameRemote.exe` once, and the autostart switches to it.
+- The autostart runs the program without administrator rights. When your game runs as administrator, you still have to start the program by hand as administrator.
+- A long touch on a toggle changes only its light and presses no key; it was so before, but it looked like a press that worked. Now the phone says in words that no key was pressed, and the PC page lists such a touch in "Recent presses" as a line of its own.
+- The button "Connect another device" is now called "Show the QR code", and a line under it says that the same code opens the remote again on a phone that is paired already. The pairing stays: there is no need to remove the phone from the list to get to the code.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.9.0
 
 Телефон может растянуть кнопки на весь свой экран.
