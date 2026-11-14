@@ -8,6 +8,7 @@ const OLD_KEY_STORE = 'gameRemote.key'; // the shared key of the first prototype
 const PANEL_STORE = 'gameRemote.panel';
 const SCREEN_STORE = 'gameRemote.screen.'; // + panel id: the screen last shown
 const VIBRATE_STORE = 'gameRemote.vibrate';
+const STRETCH_STORE = 'gameRemote.stretch';
 const NOTICE_AFTER_MS = 4000; // a short hiccup needs no explanation
 const PING_EVERY_MS = 1000;
 const PONG_TIMEOUT_MS = 3000;
@@ -34,6 +35,7 @@ const el = {
   menuOpen: document.getElementById('menu-open'),
   menuClose: document.getElementById('menu-close'),
   fullscreen: document.getElementById('menu-fullscreen'),
+  stretch: document.getElementById('menu-stretch'),
   vibration: document.getElementById('menu-vibration'),
   delay: document.getElementById('menu-delay'),
 };
@@ -62,6 +64,9 @@ let retryTimer = 0;
 let delayMs = null; // time of the last ping to the PC and back
 let offlineSince = 0; // when the connection was lost; 0 while it is fine
 let vibration = store.get(VIBRATE_STORE) !== 'off';
+// This phone stretches the buttons over its screen, also where the game has
+// them square. Off: every game looks the way it was made.
+let stretch = store.get(STRETCH_STORE) === 'on';
 let toastTimer = 0;
 // button id -> { pointerId, node, timer, flipped } for every button a finger is
 // on right now; the last two belong to a toggle
@@ -130,6 +135,12 @@ function showToast(text) {
 
 function currentPanel() {
   return panels.find((p) => p.id === panelId) || panels[0] || null;
+}
+
+// The panel as this phone draws one of its screens.
+function viewOf(panel, screen) {
+  const view = screenView(panel, screen);
+  return stretch ? { ...view, shape: 'fill' } : view;
 }
 
 // The buttons of the game can be grouped into screens; the phone remembers
@@ -405,7 +416,7 @@ function render() {
   }
   const screen = currentScreen(panel);
   if (screens.length > 1) renderTabs(el.screens, screens, screen, showScreen, 'pointerdown');
-  const shown = screenView(panel, screen);
+  const shown = viewOf(panel, screen);
   if (!shown.buttons.length) {
     showMessage(t(panel.buttons.length ? 'remote.emptyScreen' : 'remote.emptyPanel'));
     return;
@@ -424,7 +435,7 @@ function isWide() {
 function layout() {
   const panel = currentPanel();
   if (!panel) return;
-  layoutGrid(el.grid, screenView(panel, currentScreen(panel)), isWide());
+  layoutGrid(el.grid, viewOf(panel, currentScreen(panel)), isWide());
   el.grid.classList.toggle('wide', isWide());
 }
 
@@ -493,6 +504,7 @@ function renderMenu() {
   const root = document.documentElement;
   el.fullscreen.parentElement.hidden = !(root.requestFullscreen || root.webkitRequestFullscreen);
   el.fullscreen.setAttribute('aria-pressed', String(Boolean(fullscreenElement())));
+  el.stretch.setAttribute('aria-pressed', String(stretch));
   el.vibration.parentElement.hidden = !navigator.vibrate;
   el.vibration.setAttribute('aria-pressed', String(vibration));
   el.delay.hidden = !online || delayMs === null;
@@ -515,6 +527,12 @@ el.menuOpen.addEventListener('click', () => {
 });
 el.menuClose.addEventListener('click', () => { el.menu.hidden = true; });
 el.fullscreen.addEventListener('click', toggleFullscreen);
+el.stretch.addEventListener('click', () => {
+  stretch = !stretch;
+  store.set(STRETCH_STORE, stretch ? 'on' : 'off');
+  renderMenu();
+  layout(); // only the shape of the grid changes; the buttons stay
+});
 el.vibration.addEventListener('click', () => {
   vibration = !vibration;
   store.set(VIBRATE_STORE, vibration ? 'on' : 'off');

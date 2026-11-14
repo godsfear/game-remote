@@ -57,7 +57,7 @@ The buttons marked "hold" keep the key down while the finger is on the button. T
 
 ## The remote on the phone
 
-The "⋮" button in the top right corner opens the settings of this device: "Full screen" hides the address bar of the browser, "Vibration on touch" turns the feedback on and off. The same place shows how many milliseconds a signal takes to the PC and back. An accepted press gives one short buzz, a rejected one gives two, and the reason appears at the bottom.
+The "⋮" button in the top right corner opens the settings of this device: "Full screen" hides the address bar of the browser, "Buttons fill the screen" stretches the buttons over the screen of this phone, also where the game has them square, "Vibration on touch" turns the feedback on and off. The same place shows how many milliseconds a signal takes to the PC and back. An accepted press gives one short buzz, a rejected one gives two, and the reason appears at the bottom.
 
 When a game has several screens of buttons, tabs appear under its name: a touch of a tab shows the other buttons at once. The remote remembers which screen was open for each game. When the screen changes, the buttons you were holding are released.
 

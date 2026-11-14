@@ -257,6 +257,31 @@ async function firstRun(browser, ports, phoneOptions, watch) {
       (await background()).endsWith(' 960')
     )), await background());
     ok('square buttons are back', squaresFit(await tiles(page, '#grid'), 180));
+
+    // A phone can stretch the buttons over its own screen, whatever the game says.
+    const stretched = async () => {
+      const now = await tiles(page, '#grid');
+      return (await page.locator('#grid:not(.square)').count()) === 1
+        && now.buttons[5].bottom > now.grid.bottom - 20 && now.buttons[0].top < now.grid.top + 20;
+    };
+    await page.locator('#menu-open').tap();
+    ok('a phone shows a game the way it was made at first',
+      (await page.locator('#menu-stretch').getAttribute('aria-pressed')) === 'false');
+    await page.locator('#menu-stretch').tap();
+    ok('the switch of the phone shows that it is on',
+      (await page.locator('#menu-stretch').getAttribute('aria-pressed')) === 'true');
+    await page.locator('#menu-close').tap();
+    ok('the phone stretches square buttons over its screen', await stretched());
+    await shot(page, 'phone-stretched');
+    ok('the game itself stays square: the editor and other phones show it so',
+      (await desk.locator('#shape [data-shape="square"]').getAttribute('aria-pressed')) === 'true');
+    await page.reload();
+    await page.waitForSelector('#status.online');
+    ok('the phone remembers that it stretches the buttons', await until(stretched));
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-stretch').tap();
+    await page.locator('#menu-close').tap();
+    ok('switched off, the buttons are square again', squaresFit(await tiles(page, '#grid'), 180));
     await phone.close();
     await pc.close();
   } finally {
