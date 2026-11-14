@@ -100,7 +100,7 @@ def test_the_editor_is_told_about_a_newer_version_until_the_check_is_turned_off(
     assert client.get("/api/status").json()["update"] == "99.0.0"
 
     reply = client.put("/api/settings", json={"check_updates": False}, headers=ORIGIN)
-    assert reply.json() == {"language": "auto", "check_updates": False}
+    assert reply.json() == {"language": "auto", "check_updates": False, "autostart": False}
     assert client.get("/api/status").json()["update"] is None
     # The page reads the box from the status too: another window may have changed it.
     assert client.get("/api/status").json()["check_updates"] is False

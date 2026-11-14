@@ -55,6 +55,8 @@ class SettingsChoice(BaseModel):
 
     language: Language | None = None
     check_updates: bool | None = None
+    # Not in the settings file: Windows itself keeps it (see autostart.py).
+    autostart: bool | None = None
 
 
 class DeviceName(BaseModel):
@@ -147,6 +149,7 @@ def create_editor_app(state: AppState) -> FastAPI:
             "update": state.update,
             # Here too, so that the box follows a change made in another window.
             "check_updates": state.user.check_updates,
+            "autostart": autostart(),
             "held_keys": sorted(state.controller.held_keys),
         }
 
@@ -324,18 +327,39 @@ def create_editor_app(state: AppState) -> FastAPI:
         await state.hub.broadcast_panels()
         return JSONResponse({"id": panel_id, **panels_reply()}, status_code=201)
 
+    def autostart() -> bool | None:
+        """Whether Windows starts the program at sign-in. None: this copy
+        cannot be started so, and the page does not offer it."""
+        return state.autostart.enabled() if state.autostart.supported else None
+
     def settings_reply() -> dict:
-        return {"language": state.user.language, "check_updates": state.user.check_updates}
+        return {
+            "language": state.user.language,
+            "check_updates": state.user.check_updates,
+            "autostart": autostart(),
+        }
 
     @app.get("/api/settings")
     async def get_settings() -> dict:
         return settings_reply()
 
     @app.put("/api/settings")
-    async def put_settings(body: SettingsChoice) -> dict:
-        # Only these two are the page's to change; the rest of the file stays.
+    async def put_settings(body: SettingsChoice) -> Response:
+        if body.autostart is not None:
+            try:
+                state.autostart.set(body.autostart)
+            except OSError as exc:
+                log.exception("Windows did not take the start of the program at sign-in")
+                reason = exc.strerror or str(exc)
+                return JSONResponse({"error": f"Windows refused: {reason}"}, status_code=500)
+        # Only these two of the file are the page's to change; the rest stays.
         before = state.user
-        chosen = before.model_copy(update=body.model_dump(exclude_none=True))
+        ours = body.model_dump(exclude_none=True, exclude={"autostart"})
+        if not ours:
+            # Nothing of the file changes: it is not written, and a file that
+            # cannot be written does not undo what Windows already took.
+            return JSONResponse(settings_reply())
+        chosen = before.model_copy(update=ours)
         # Written first: a choice that could not be saved is not acted upon.
         save_user_settings(settings.user_settings_path, chosen)
         state.user = chosen
@@ -346,7 +370,7 @@ def create_editor_app(state: AppState) -> FastAPI:
         elif not before.check_updates:
             # Turned on: the program asks now. The page does not wait for GitHub.
             state.check_now.set()
-        return settings_reply()
+        return JSONResponse(settings_reply())
 
     @app.get("/panel-files/{panel_id}/{name}")
     async def panel_file(panel_id: str, name: str) -> FileResponse:

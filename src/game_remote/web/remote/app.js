@@ -328,6 +328,9 @@ function press(button, node, pointerId) {
     entry.timer = setTimeout(() => {
       entry.flipped = true;
       tell('flip', button, node);
+      // Said in words too: the button changed, and the player may take that
+      // for a press.
+      showToast(t('remote.lightOnly'));
       // One long pulse. Two short ones mean a press the PC refused or a macro
       // it stopped, three that the PC opened another game.
       buzz(80);

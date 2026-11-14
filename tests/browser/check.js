@@ -402,7 +402,7 @@ async function main() {
   const lamp = page.locator('.btn.toggle[data-button="pause"]');
   ok('a toggle is drawn unlit', await until(async () => (await lamp.getAttribute('aria-pressed')) === 'false'));
   const pause = await center('pause');
-  const presses = async () => (await status()).recent.filter((press) => press.button === 'Пауза').length;
+  const presses = async () => (await status()).recent.filter((press) => press.button === 'Пауза' && !press.light).length;
   await touch('touchStart', [{ ...pause, id: 1 }]);
   await sleep(250);
   ok('a toggle waits for the finger to lift', (await presses()) === 0);
@@ -413,6 +413,10 @@ async function main() {
   await shot(page, 'phone-toggle');
   await touch('touchStart', [{ ...pause, id: 1 }]);
   ok('a long touch puts the light out', await until(async () => (await lamp.getAttribute('aria-pressed')) === 'false'));
+  ok('and the phone says that no key was pressed', await until(async () => (
+    (await page.locator('#toast').isVisible()) && (await page.locator('#toast').textContent()).includes('клавиша не нажата')
+  )));
+  ok('the PC lists it apart from the presses', (await status()).recent[0].light === true);
   await touch('touchEnd', [{ ...pause, id: 1 }]);
   await sleep(250);
   ok('and presses no key, during it or after', (await presses()) === 1);
@@ -571,6 +575,10 @@ async function main() {
     (await desk.locator('#device-list li.online .device-name').allTextContents()).join() === 'Pixel 7'
   )));
   ok('the QR code folds away once a phone is paired', await desk.locator('#qr').isHidden());
+  ok('the editor says that a paired phone opens the remote again without a new pairing',
+    (await desk.locator('#reopen-hint').isVisible())
+    && (await desk.locator('#reopen-hint').textContent()).includes('удалять устройство не нужно')
+    && (await desk.locator('#show-qr').textContent()) === 'Показать QR-код');
   await desk.click('#show-qr');
   ok('the QR code is drawn', await until(() => desk.evaluate(() => document.getElementById('qr').naturalWidth > 0)));
   ok('the address list fits its card', await desk.evaluate(() => (
@@ -885,6 +893,14 @@ async function main() {
     (await desk.locator('#check-updates').isChecked()) && (await desk.locator('#save-state.error').count()) === 1
   )) && settingsFile().check_updates === true);
   await desk.unroute(/\/api\/(settings|status)$/);
+  // The start with Windows: in test mode the box changes nothing in Windows.
+  ok('the editor offers to start the program with Windows, and it is off at first',
+    (await desk.locator('#autostart-field').isVisible()) && !(await desk.locator('#autostart').isChecked()));
+  await desk.check('#autostart');
+  ok('the box of the start with Windows reaches the PC', await until(async () => (await status()).autostart === true));
+  ok('and is not written into the file of settings', !('autostart' in settingsFile()));
+  await desk.uncheck('#autostart');
+  ok('and it is taken back', await until(async () => (await status()).autostart === false));
   // Another window of the editor changes the setting: this one follows.
   await desk.evaluate(() => fetch('/api/settings', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ check_updates: false }),

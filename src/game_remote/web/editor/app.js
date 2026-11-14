@@ -28,7 +28,8 @@ const el = Object.fromEntries([
   'import-set', 'export-set', 'set-file', 'export-dialog', 'export-language',
   'same-dialog', 'same-text', 'update', 'update-text', 'check-updates',
   'toggle-on', 'toggle-on-field', 'steps-field', 'step-list', 'add-step',
-  'macro-window-hint', 'macros-dialog', 'macros-text',
+  'macro-window-hint', 'macros-dialog', 'macros-text', 'reopen-hint',
+  'autostart', 'autostart-field',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -61,6 +62,7 @@ let capture = null; // { down: Set, all: [] } while a combo is being recorded
 let saveTimer = 0;
 let saving = null; // the save that runs now, as a promise
 let savingCheck = false; // the box of the update check is being saved
+let savingAutostart = false; // and the box of the start with Windows
 const dirty = new Set(); // ids of panels with changes not yet on the PC
 
 // The name of each kind of button; its hint has the same key with "Hint".
@@ -1021,6 +1023,8 @@ function renderConnect() {
   el.phones.textContent = phones ? t('editor.phones', { n: phones }) : t('editor.waiting');
   el.phones.classList.toggle('waiting', !phones);
   el['show-qr'].hidden = !devices.length;
+  // Whoever closed the remote on a paired phone need not pair it again.
+  el['reopen-hint'].hidden = !devices.length;
   el['show-qr'].textContent = t(showQrAnyway ? 'editor.hideQr' : 'editor.showQr');
   el['connect-body'].hidden = devices.length > 0 && !showQrAnyway;
   renderDevices();
@@ -1103,6 +1107,7 @@ function renderStatus(status) {
   el['update-text'].textContent = status.update ? t('editor.update', { version: status.update }) : '';
   // The box follows the PC: the setting may have been changed in another window.
   if (!savingCheck) el['check-updates'].checked = status.check_updates;
+  showAutostart(status.autostart);
   phones = status.phones;
   devices = status.devices;
   renderConnect();
@@ -1112,7 +1117,8 @@ function renderStatus(status) {
   el.recent.replaceChildren(...status.recent.slice(0, 6).map((press) => {
     const what = node('span', '', `${press.panel} · ${press.button}`);
     what.append(node('span', 'keys', press.keys));
-    const result = press.ok ? t('editor.sent') : `${t('editor.rejected')}: ${t(`reason.${press.reason}`)}`;
+    const sent = t(press.light ? 'editor.lightOnly' : 'editor.sent');
+    const result = press.ok ? sent : `${t('editor.rejected')}: ${t(`reason.${press.reason}`)}`;
     const li = node('li', press.ok ? '' : 'rejected');
     li.append(what, node('span', 'result', result));
     return li;
@@ -1245,6 +1251,25 @@ el.language.addEventListener('change', report(async () => {
   const saved = await api('/api/settings', { method: 'PUT', body: { language: el.language.value } });
   useLanguage(saved.language);
 }));
+// null: this copy of the program cannot be started by Windows, so the box
+// is not offered. Else the box shows what Windows has.
+function showAutostart(on) {
+  el['autostart-field'].hidden = on === null || on === undefined;
+  if (!savingAutostart) el.autostart.checked = Boolean(on);
+}
+
+el.autostart.addEventListener('change', report(async () => {
+  const body = { autostart: el.autostart.checked };
+  savingAutostart = true; // an answer of the PC from before the click does not undo it
+  try {
+    el.autostart.checked = Boolean((await api('/api/settings', { method: 'PUT', body })).autostart);
+  } catch (error) {
+    el.autostart.checked = !body.autostart; // not taken: the box shows what Windows has
+    throw error;
+  } finally {
+    savingAutostart = false;
+  }
+}));
 el['check-updates'].addEventListener('change', report(async () => {
   const body = { check_updates: el['check-updates'].checked };
   savingCheck = true; // an answer of the PC from before the click does not undo it
@@ -1299,6 +1324,7 @@ async function start() {
     setLanguage(chosen.language);
     el.language.value = chosen.language;
     el['check-updates'].checked = chosen.check_updates;
+    showAutostart(chosen.autostart);
   } catch { /* keep the browser's language */ }
   applyTexts();
   buildColors();

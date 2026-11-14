@@ -36,6 +36,7 @@
         <p id="phones" class="waiting" role="status"></p>
         <ul id="device-list"></ul>
         <button id="show-qr" type="button" class="quiet" data-i18n="editor.showQr" hidden></button>
+        <p class="hint" id="reopen-hint" data-i18n="editor.reopenHint" hidden></p>
         <div id="connect-body">
           <div id="qr-box"><img id="qr" alt="QR" hidden><p id="no-address" data-i18n="editor.noAddress" hidden></p></div>
           <p class="hint" data-i18n="editor.connectHint"></p>
@@ -210,6 +211,7 @@
       </select>
     </label>
     <label><input id="check-updates" type="checkbox" checked> <span data-i18n="editor.checkUpdates"></span></label>
+    <label id="autostart-field" hidden><input id="autostart" type="checkbox"> <span data-i18n="editor.autostart"></span></label>
     <span class="row">
       <button id="open-folder" type="button" class="quiet" data-i18n="editor.openFolder"></button>
       <button id="quit" type="button" class="quiet" data-i18n="editor.quit"></button>

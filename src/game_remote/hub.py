@@ -76,7 +76,7 @@ from game_remote.access import PairingCodes
 from game_remote.devices import Device, DeviceStore
 from game_remote.input import Combo, InputController, InputError
 from game_remote.input.windows import ForegroundInfo, input_blocked_by_elevation
-from game_remote.panels import Button, PanelStore
+from game_remote.panels import Button, LoadedPanel, PanelStore
 
 log = logging.getLogger(__name__)
 
@@ -483,6 +483,8 @@ class RemoteHub:
             if button.type != "toggle":
                 return "unknown_button"
             await self._flip(key, button)
+            # Listed with the presses: the light changed, and no key went with it.
+            self._remember(conn, loaded, button, None, light=True)
             return None
         if key in conn.held:
             return None  # already down; a repeated "down" changes nothing
@@ -514,6 +516,19 @@ class RemoteHub:
                 reason = "input_error"
         if reason is None and button.type == "toggle":
             await self._flip(key, button)
+        self._remember(conn, loaded, button, reason)
+        return reason
+
+    def _remember(
+        self,
+        conn: Connection,
+        loaded: LoadedPanel,
+        button: Button,
+        reason: str | None,
+        light: bool = False,
+    ) -> None:
+        """One more line for the list of recent presses on the PC. ``light``:
+        a long touch set the light of a toggle right, and no key was pressed."""
         self.recent.appendleft(
             {
                 "time": time.time(),
@@ -524,9 +539,9 @@ class RemoteHub:
                 "type": button.type,
                 "ok": reason is None,
                 "reason": reason,
+                "light": light,
             }
         )
-        return reason
 
     @staticmethod
     async def _finish_tap(rest: Coroutine[None, None, None]) -> None:

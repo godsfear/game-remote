@@ -242,7 +242,11 @@ def test_a_long_touch_sets_the_light_right_without_a_key(state, tmp_path):
         # Only a toggle has a light to set.
         assert press(ws, "flip", "map", message_id=2)["reason"] == "unknown_button"
         assert press(ws, "flip", "nothing", message_id=3)["reason"] == "unknown_button"
-    assert trace(state) == [] and len(state.hub.recent) == 0
+    # The PC lists it with the presses and says that no key went with it.
+    assert trace(state) == []
+    assert [(p["button"], p["ok"], p["light"]) for p in state.hub.recent] == [
+        ("lights", True, True)
+    ]
 
 
 def test_a_press_that_was_rejected_leaves_the_light_as_it_was(state, tmp_path):

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from game_remote.access import PairingCodes, remove_legacy_key
+from game_remote.autostart import Autostart, MemoryValue, windows_autostart
 from game_remote.config import Settings
 from game_remote.devices import DeviceStore
 from game_remote.hub import RemoteHub
@@ -42,6 +43,8 @@ class AppState:
     latest_version: Callable[[], str | None] = latest_version
     # A newer version of the program that is out, for the editor to tell about.
     update: str | None = None
+    # Whether Windows starts the program at sign-in. Real only in the exe.
+    autostart: Autostart = field(default_factory=lambda: Autostart(MemoryValue(), None))
     # Set to ask for the latest version now, not when its day has passed.
     check_now: asyncio.Event = field(default_factory=asyncio.Event)
     # Set by the running program: stops both servers. None while nothing is running.
@@ -103,6 +106,11 @@ def build_state(
     windows = _sample_windows if fake_input else open_windows
     state = AppState(settings, backend, controller, store, hub, devices, pairing, user, windows)
     if fake_input:
-        # Test mode stays on the PC: nothing is asked outside it.
+        # Test mode stays on the PC: nothing is asked outside it, and the box
+        # of the start with Windows changes nothing in Windows.
         state.latest_version = lambda: None
+        state.autostart = Autostart(MemoryValue(), "GameRemote.exe --no-browser")
+    else:
+        state.autostart = windows_autostart()
+        state.autostart.refresh()
     return state
