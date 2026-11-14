@@ -1,5 +1,23 @@
 # Изменения / Changelog
 
+## 0.9.0
+
+Телефон может растянуть кнопки на весь свой экран.
+
+- В настройках пульта (кнопка «⋮» на телефоне) появился переключатель «Кнопки на весь экран». Когда он включён, телефон растягивает кнопки по экрану и там, где у игры они квадратные и стоят посередине. Удобно на небольшом экране: кнопки становятся крупнее.
+- Настройка своя у каждого телефона и запоминается на нём. Сама игра не меняется: в редакторе и на других устройствах она выглядит как прежде.
+- Картинка заполняет растянутую кнопку целиком, поэтому её края могут обрезаться.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+A phone can stretch the buttons over its whole screen.
+
+- The settings of the remote (the "⋮" button on the phone) have a new switch, "Buttons fill the screen". When it is on, the phone stretches the buttons over the screen, also where the game has them square and in the middle. It helps on a small screen: the buttons get larger.
+- The setting belongs to the phone and is kept there. The game itself does not change: the editor and other devices show it as before.
+- A picture fills a stretched button entirely, so its edges may be cut off.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.8.0
 
 Макросы: одно касание нажимает несколько клавиш подряд.
