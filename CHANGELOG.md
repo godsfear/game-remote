@@ -1,5 +1,25 @@
 # Изменения / Changelog
 
+## 0.10.1
+
+Исправления к 0.10.0.
+
+- На странице ПК в «Последних нажатиях» длинный текст справа больше не сжимает название кнопки в узкий столбик: он уходит на отдельную строку под названием. Так выглядели отклонённые нажатия и долгое касание переключателя.
+- Внизу страницы ПК галочки «Проверять новую версию на GitHub» и «Запускать вместе с Windows» стоят одна под другой, и кнопки рядом с ними снова умещаются в одну строку.
+- Макрос, который прервал ПК, теперь виден в «Последних нажатиях» отдельной строкой «макрос прерван» с причиной, например «Окно игры не активно». Раньше причина попадала только в журнал программы.
+- Файл панели стал короче: в него пишется только то, что отличается от значений по умолчанию. Панели читаются как прежде, а сохранённые раньше перепишутся в коротком виде при первом изменении.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+Fixes for 0.10.0.
+
+- On the PC page a long text on the right of "Recent presses" no longer squeezes the name of the button into a narrow column: it goes to a line of its own under the name. Rejected presses and a long touch on a toggle looked so.
+- At the bottom of the PC page the boxes "Check GitHub for a new version" and "Start with Windows" stand one under another, and the buttons next to them fit into one line again.
+- A macro the PC stopped now shows in "Recent presses" as a line of its own, "macro stopped", with the reason, for example "The game window is not active". The reason used to go to the log of the program only.
+- The panel file got shorter: it holds only what differs from the defaults. Panels are read as before, and those saved earlier are rewritten in the short form at their first change.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.10.0
 
 Автозапуск с Windows и два пояснения там, где программу было легко понять неправильно.
