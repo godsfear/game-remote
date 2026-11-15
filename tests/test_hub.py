@@ -572,7 +572,9 @@ def test_the_watcher_stops_a_macro_whose_window_is_left(state, tmp_path):
     add_macro(state, tmp_path, [{"keys": "KeyW", "hold": 4000}, {"keys": "KeyE"}])
     hub = state.hub
     key, button = ("demo", "dock"), state.store.get("demo").panel.button("dock")
-    conn = SimpleNamespace(id="phone", ws="phone", held={}, active=[])
+    device = SimpleNamespace(name="Test phone")
+    conn = SimpleNamespace(id="phone", ws="phone", held={}, active=[], device=device)
+    loaded = state.store.get("demo")
     hub.connections = {"phone": conn}
     heard = []
 
@@ -583,7 +585,7 @@ def test_the_watcher_stops_a_macro_whose_window_is_left(state, tmp_path):
 
     async def scenario():
         hub.foreground = foreground("x4.exe")
-        hub._start_macro(conn, key, button, "X4.exe")
+        hub._start_macro(conn, key, button, loaded)
         await asyncio.sleep(0.05)
         assert state.controller.held_keys == {"KeyW"}
         hub.check_macros()  # still in the game: nothing happens
@@ -596,13 +598,13 @@ def test_the_watcher_stops_a_macro_whose_window_is_left(state, tmp_path):
         before = list(heard)
         # A macro that is stopped before its first line ran leaves nothing behind.
         hub.foreground = foreground("x4.exe")
-        hub._start_macro(conn, key, button, "X4.exe")
+        hub._start_macro(conn, key, button, loaded)
         hub._stop_macro(hub.macros[key], None)
         await asyncio.sleep(0.01)
         assert hub.macros == {}
         # "Release all keys" on the PC ends every macro, whoever started it.
         del heard[:]
-        hub._start_macro(conn, key, button, "X4.exe")
+        hub._start_macro(conn, key, button, loaded)
         await asyncio.sleep(0.05)
         assert state.controller.held_keys == {"KeyW"}
         hub.stop_macros()
@@ -618,6 +620,11 @@ def test_the_watcher_stops_a_macro_whose_window_is_left(state, tmp_path):
         {"type": "stopped", "panel": "demo", "button": "dock", "reason": "not_focused"},
     ]
     assert trace(state) == ["+KeyW", "-KeyW"] * 2
+    # The PC lists the macro it ended, with the reason; the two the player or
+    # the PC's own button ended are not in the list.
+    assert [(p["button"], p["reason"], p["stopped"]) for p in hub.recent] == [
+        ("Dock", "not_focused", True)
+    ]
 
 
 def test_a_phone_ends_the_macros_it_started(state, tmp_path):

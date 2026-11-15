@@ -1118,7 +1118,9 @@ function renderStatus(status) {
     const what = node('span', '', `${press.panel} · ${press.button}`);
     what.append(node('span', 'keys', press.keys));
     const sent = t(press.light ? 'editor.lightOnly' : 'editor.sent');
-    const result = press.ok ? sent : `${t('editor.rejected')}: ${t(`reason.${press.reason}`)}`;
+    // A macro that began and was ended by the PC is not a press that was refused.
+    const refused = t(press.stopped ? 'editor.stopped' : 'editor.rejected');
+    const result = press.ok ? sent : `${refused}: ${t(`reason.${press.reason}`)}`;
     const li = node('li', press.ok ? '' : 'rejected');
     li.append(what, node('span', 'result', result));
     return li;

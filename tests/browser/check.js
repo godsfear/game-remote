@@ -704,6 +704,42 @@ async function main() {
     (await desk.locator('#button-list li[aria-current="true"] .keys').textContent()).includes('2'));
   ok('the preview marks a macro', (await desk.locator('#preview .btn.macro').count()) === 1);
   await shot(desk, 'pc-editor-macro', { fullPage: true });
+  // The list of presses and the footer keep their shape with long texts and two boxes.
+  // The PC is made to list a long touch and a macro it stopped: their lines are the longest.
+  const longLines = [
+    { light: true, stopped: false, ok: true, reason: null },
+    { light: false, stopped: true, ok: false, reason: 'not_focused' },
+  ].map((kind) => ({
+    time: 0, phone: 'Pixel 7', panel: 'Star Citizen', button: 'Фары', keys: 'L', type: 'toggle', ...kind,
+  }));
+  await desk.route(/\/api\/status$/, async (route) => {
+    const response = await route.fetch();
+    const answer = await response.json();
+    await route.fulfill({ response, json: { ...answer, recent: [...longLines, ...answer.recent] } });
+  });
+  ok('the PC page tells a long touch and a stopped macro from a press', await until(async () => {
+    const lines = (await desk.locator('#recent li .result').allTextContents()).join(' | ');
+    return lines.includes('сменилась только подсветка') && lines.includes('макрос прерван: Окно игры не активно');
+  }));
+  await shot(desk, 'pc-recent-long', { fullPage: true });
+  const pressList = await desk.evaluate(() => [...document.querySelectorAll('#recent li')].map((li) => {
+    const [what, result] = li.children;
+    const line = parseFloat(getComputedStyle(what).fontSize) * 1.6;
+    return {
+      squeezed: what.getBoundingClientRect().height > 2.2 * line,
+      below: result.getBoundingClientRect().top >= what.getBoundingClientRect().bottom - 2,
+    };
+  }));
+  ok('a long outcome goes under the name of the press and does not squeeze it',
+    pressList.some((press) => press.below) && !pressList.some((press) => press.squeezed), JSON.stringify(pressList));
+  await desk.unroute(/\/api\/status$/);
+  ok('the boxes and the buttons of the footer stand in one line', await desk.evaluate(() => {
+    const boxes = document.querySelector('footer .checks').getBoundingClientRect();
+    const quit = document.getElementById('quit').getBoundingClientRect();
+    const under = document.getElementById('autostart-field').getBoundingClientRect().top
+      > document.getElementById('check-updates').getBoundingClientRect().top;
+    return under && quit.top < boxes.bottom && quit.bottom > boxes.top;
+  }));
   // The steps change places, and one of them goes away.
   await desk.locator('#step-list li').nth(1).locator('button', { hasText: '↑' }).click();
   ok('a step moves up', (await desk.locator('#step-list li .keys').allTextContents()).join() === 'Enter,M');

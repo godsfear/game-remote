@@ -344,26 +344,14 @@ def parse_panel(data: object) -> Panel:
 
 
 def panel_text(panel: Panel) -> str:
-    """The panel as ``panel.json`` holds it. A panel without screens is written
-    without their fields, so the version before screens still reads the file;
-    the same goes for a button that is not a toggle that starts on."""
-    data = panel.model_dump(exclude_none=True)
+    """The panel as ``panel.json`` holds it: only what differs from what the
+    program takes when a field is missing. The file stays short enough to be
+    read and edited by hand."""
+    data = panel.model_dump(exclude_none=True, exclude_defaults=True)
     # A file this program writes is of this program's format, whatever number
     # the panel came with: an older program must see that it is not for it.
-    data["format"] = FORMAT
-    if not panel.screens:
-        del data["screens"]
-    for button in data["buttons"]:
-        if not panel.screens:
-            del button["screen"]
-        if not button["on"]:
-            del button["on"]
-        if not button["steps"]:
-            del button["steps"]
-        for step in button.get("steps", ()):
-            if not step["wait"]:
-                del step["wait"]
-    return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    data.pop("format", None)
+    return json.dumps({"format": FORMAT, **data}, ensure_ascii=False, indent=2) + "\n"
 
 
 def short_error(exc: Exception) -> str:

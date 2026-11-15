@@ -150,9 +150,12 @@ summary { cursor: pointer; }
 #preview .btn.selected.toggle[aria-pressed="true"]::after { box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px #46e08a; }
 #preview-empty { margin: auto; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
 
-#recent li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; background: var(--raised); border-radius: 9px; font-size: 14px; }
-#recent .result { color: var(--muted); font-size: 13px; white-space: nowrap; }
-#recent li.rejected .result { color: var(--bad); white-space: normal; text-align: right; }
+/* What was pressed and what came of it stand in one line while both fit. A
+   long outcome goes to a line of its own: it must not squeeze the name. */
+#recent li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 8px 12px; background: var(--raised); border-radius: 9px; font-size: 14px; }
+#recent li > span:first-child { flex: 1 1 12em; }
+#recent .result { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+#recent li.rejected .result { color: var(--bad); }
 #recent .keys { color: var(--muted); font-size: 13px; margin-left: 8px; }
 #release { margin-top: 12px; }
 
@@ -165,6 +168,9 @@ summary { cursor: pointer; }
 #language-row { display: flex; align-items: center; gap: 8px; margin-right: auto; margin-left: 24px; }
 #language-row select { width: auto; font-size: 14px; padding: 6px 10px; }
 
+/* The boxes of the footer stand one under another: side by side they push
+   the buttons onto a line of their own. */
+footer .checks { display: grid; gap: 4px; }
 footer { margin-top: 20px; flex-wrap: wrap; display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
 
 @media (max-width: 1100px) {

@@ -345,11 +345,11 @@ class RemoteHub:
     # -- macros ---------------------------------------------------------------
 
     def _start_macro(
-        self, conn: Connection, key: tuple[str, str], button: Button, window: str
+        self, conn: Connection, key: tuple[str, str], button: Button, loaded: LoadedPanel
     ) -> None:
-        macro = Macro(conn, window)
+        macro = Macro(conn, loaded.panel.window or "")
         self.macros[key] = macro
-        macro.task = asyncio.create_task(self._run_macro(key, button, macro))
+        macro.task = asyncio.create_task(self._run_macro(key, button, macro, loaded))
         # Also when it was stopped before its first line ran.
         macro.task.add_done_callback(lambda task: self._forget_macro(key, macro))
 
@@ -374,7 +374,9 @@ class RemoteHub:
         if macro.task is not None:
             macro.task.cancel()
 
-    async def _run_macro(self, key: tuple[str, str], button: Button, macro: Macro) -> None:
+    async def _run_macro(
+        self, key: tuple[str, str], button: Button, macro: Macro, loaded: LoadedPanel
+    ) -> None:
         lit = {"type": "lit", "panel": key[0], "button": key[1]}
         reason = None
         try:
@@ -397,6 +399,8 @@ class RemoteHub:
         await self._broadcast({**lit, "on": False})
         if reason:
             log.info("The macro %s of %s was stopped: %s", key[1], key[0], reason)
+            # Listed on the PC too: its start stands there as a press that was sent.
+            self._remember(macro.conn, loaded, button, reason, stopped=True)
         if reason and macro.conn.id in self.connections:
             stopped = {"type": "stopped", "panel": key[0], "button": key[1], "reason": reason}
             with contextlib.suppress(RuntimeError, WebSocketDisconnect):
@@ -498,7 +502,7 @@ class RemoteHub:
             if not loaded.panel.window:
                 reason = "no_window"
             if reason is None:
-                self._start_macro(conn, key, button, loaded.panel.window)
+                self._start_macro(conn, key, button, loaded)
         elif reason is None:
             combo = button.combo
             try:
@@ -526,9 +530,11 @@ class RemoteHub:
         button: Button,
         reason: str | None,
         light: bool = False,
+        stopped: bool = False,
     ) -> None:
         """One more line for the list of recent presses on the PC. ``light``:
-        a long touch set the light of a toggle right, and no key was pressed."""
+        a long touch set the light of a toggle right, and no key was pressed.
+        ``stopped``: the PC ended a macro that ran, for ``reason``."""
         self.recent.appendleft(
             {
                 "time": time.time(),
@@ -540,6 +546,7 @@ class RemoteHub:
                 "ok": reason is None,
                 "reason": reason,
                 "light": light,
+                "stopped": stopped,
             }
         )
 

@@ -452,6 +452,19 @@ def test_a_panel_of_a_newer_version_asks_for_an_update(tmp_path, monkeypatch):
     with pytest.raises(NewerFormat):
         read_set(write_set(tmp_path / "next", written))
     assert json.loads(panel_text(Panel.model_validate(MINIMAL)))["format"] == FORMAT
+    # The same for a panel that was read with the newest number this program knows.
+    monkeypatch.setattr("game_remote.panels.FORMAT", FORMAT + 1)
+    newest = panel_text(Panel.model_validate(MINIMAL | {"format": FORMAT}))
+    monkeypatch.undo()
+    assert json.loads(newest)["format"] == FORMAT + 1
+    # A file holds only what differs from what a missing field means.
+    assert json.loads(
+        panel_text(Panel.model_validate(MINIMAL | {"columns": 3, "shape": "fill"}))
+    ) == {
+        "format": FORMAT,
+        "name": "X4",
+        "buttons": [{"id": "map", "label": "Map", "keys": "KeyM"}],
+    }
     # What the versions before this one took, this one takes too.
     assert read_set(write_set(tmp_path / "float", MINIMAL | {"format": 1.0})).panel.name == "X4"
 
