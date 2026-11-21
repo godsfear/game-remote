@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import sys
@@ -12,13 +13,16 @@ from game_remote.panels import (
     SAMPLE_ID,
     Button,
     HasMacros,
+    LoadedPanel,
     NewerFormat,
     Panel,
     PanelStore,
     Translation,
     demo_panel,
+    pack_set,
     panel_text,
     read_set,
+    sign_names,
     unpack_set,
 )
 from game_remote.state import build_state
@@ -34,6 +38,8 @@ def write_panel(root, panel_id, data):
 
 
 MINIMAL = {"name": "X4", "buttons": [{"id": "map", "label": "Map", "keys": "KeyM"}]}
+# The signs of format 3: how many, and a print of their names.
+SIGNS = (307, "d8ec1308ceff")
 
 
 def started(data_dir):
@@ -172,6 +178,7 @@ def test_phone_never_receives_key_combos(tmp_path):
             "on": False,
             "color": None,
             "image": None,
+            "sign": None,
             "screen": 0,
         }
     ]
@@ -247,7 +254,16 @@ def test_keys_are_normalised_modifiers_first():
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "color": "red"}]},
         {"name": "x", "buttons": [], "columns": 0},
         {"name": "x", "buttons": [], "macro": "anything"},
-        {"name": "x", "buttons": [], "format": 3},
+        {"name": "x", "buttons": [], "format": 4},
+        # A sign: of the library or a picture with a clear background, and nothing else.
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "no-such-sign"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "gear.jpg"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "../gear.png"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "gear.svg"}]},
+        {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": ""}]},
+        {"name": "x", "buttons": [], "tile": "../tile.png"},
+        {"name": "x", "buttons": [], "sign_color": "cyan"},
+        {"name": "x", "buttons": [], "sign_glow": "#12345"},
         # A macro: steps and nothing else to press, not too many and not too long.
         {"name": "x", "buttons": [{"id": "a", "type": "macro"}]},
         {"name": "x", "buttons": [{"id": "a", "type": "macro", "steps": []}]},
@@ -521,7 +537,7 @@ def test_a_macro_is_a_button_with_steps(tmp_path):
 
     # The file has the steps and nothing a step does not need; the phone gets no keys.
     written = json.loads(panel_text(panel))
-    assert written["format"] == 2
+    assert written["format"] == FORMAT
     assert written["buttons"] == [
         {
             "id": "dock",
@@ -539,6 +555,7 @@ def test_a_macro_is_a_button_with_steps(tmp_path):
 
     # A set written by hand has to say that it is of the format with macros:
     # the program before them takes silence for format 1.
+    assert panel.needs_format() == 2
     for silent in ({}, {"format": 1}):
         by_hand = {key: value for key, value in written.items() if key != "format"} | silent
         with pytest.raises(ValueError, match='panel.json: a panel with a macro says "format": 2'):
@@ -574,7 +591,11 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
     After that write the new picture of the files here. (Toggles came in 0.6.0 without it, and 0.5.0
     answers them with "buttons.0.type: Input should be".)"""
     image = r"pattern=^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
-    assert FORMAT == 2
+    assert FORMAT == 3
+    # The signs that ship with the program are a part of the format: a set
+    # names them, and the program before a new sign does not have it.
+    signs = "\n".join(sorted(sign_names()))
+    assert (len(sign_names()), hashlib.sha256(signs.encode()).hexdigest()[:12]) == SIGNS
     assert picture(Panel) == {
         "Button": "",
         "Button.color": "pattern=^#[0-9a-fA-F]{6}$",
@@ -584,6 +605,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "Button.label": "maxLength=40",
         "Button.on": "",
         "Button.screen": "exclusiveMaximum=8 minimum=0",
+        "Button.sign": "",
         "Button.steps": "maxItems=20",
         "Button.type": "enum=['tap', 'hold', 'toggle', 'macro']",
         "Step": "",
@@ -594,11 +616,14 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "buttons": "maxItems=200",
         "columns": "maximum=8 minimum=1",
         "cover": image,
-        "format": "enum=[1, 2]",
+        "format": "enum=[1, 2, 3]",
         "language": "pattern=^[a-z]{2}$",
         "name": "maxLength=60 minLength=1",
         "screens": "maxItems=8 maxLength=24 minLength=1",
         "shape": "enum=['fill', 'square']",
+        "sign_color": "pattern=^#[0-9a-fA-F]{6}$",
+        "sign_glow": "pattern=^#[0-9a-fA-F]{6}$",
+        "tile": image,
         "window": "maxLength=260",
     }
     # The translations of a set travel with it and are read as strictly.
@@ -607,6 +632,88 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "name": "maxLength=60 minLength=1",
         "screens": "maxLength=24 minLength=1",
     }
+
+
+THEMED = MINIMAL | {
+    "tile": "tile.jpg",
+    "sign_color": "#dcfaff",
+    "sign_glow": "#46d7ff",
+    "buttons": [
+        {"id": "power", "keys": "KeyP", "sign": "power"},
+        {"id": "gear", "keys": "KeyN", "sign": "gear.png"},
+        {"id": "map", "keys": "KeyM", "image": "map.jpg", "sign": "sc-starmap"},
+        {"id": "plain", "keys": "KeyX"},
+    ],
+}
+
+
+def test_a_button_is_put_together_of_a_tile_and_a_sign(tmp_path):
+    panel = Panel.model_validate(THEMED)
+    assert panel.needs_format() == 3
+    # The files of the panel: a sign of the library is not one of them.
+    assert panel.images() == {"tile.jpg", "gear.png", "map.jpg"}
+    written = json.loads(panel_text(panel))
+    assert written == {"format": FORMAT} | THEMED
+
+    folder = write_panel(tmp_path, "x4", written)
+    for name in panel.images():
+        (folder / name).write_bytes(b"\x89PNG\r\n\x1a\n")
+    store = PanelStore(tmp_path)
+    store.load()
+    loaded = store.panels["x4"]
+    public = loaded.public()
+    assert public["tile"].startswith("/panel-files/x4/tile.jpg?v=")
+    assert (public["sign_color"], public["sign_glow"]) == ("#dcfaff", "#46d7ff")
+    signs = [button["sign"] for button in public["buttons"]]
+    assert signs[0] == "/shared/signs/power.svg" and signs[2] == "/shared/signs/sc-starmap.svg"
+    assert signs[1].startswith("/panel-files/x4/gear.png?v=") and signs[3] is None
+    # The phone is given the tile and a sign of one's own like any picture of the panel.
+    assert loaded.image_path("tile.jpg") and loaded.image_path("gear.png")
+
+    # A set carries the tile and the sign that is a file, and names the others.
+    with zipfile.ZipFile(io.BytesIO(pack_set(loaded, "en"))) as archive:
+        assert sorted(archive.namelist()) == ["gear.png", "map.jpg", "panel.json", "tile.jpg"]
+    # What is gone from the folder is gone from the set; a sign of the library stays.
+    (folder / "tile.jpg").unlink()
+    (folder / "gear.png").unlink()
+    with zipfile.ZipFile(io.BytesIO(pack_set(loaded, "en"))) as archive:
+        shared = json.loads(archive.read("panel.json"))
+    assert "tile" not in shared
+    assert [b.get("sign") for b in shared["buttons"]] == ["power", None, "sc-starmap", None]
+
+
+def test_the_program_reads_the_largest_set_it_writes(tmp_path):
+    """Every button with a picture and a sign of its own, and all the rest."""
+    buttons = [
+        {"id": f"b{n}", "keys": "KeyA", "image": f"i{n}.png", "sign": f"s{n}.png"}
+        for n in range(200)
+    ]
+    whole = {"cover": "cover.png", "background": "back.png", "tile": "tile.png"}
+    folder = write_panel(tmp_path / "panels", "big", MINIMAL | whole | {"buttons": buttons})
+    panel = Panel.model_validate(MINIMAL | whole | {"buttons": buttons})
+    for name in panel.images():
+        (folder / name).write_bytes(b"\x89PNG\r\n\x1a\n")
+    (tmp_path / "back").mkdir()
+    unpack_set(pack_set(LoadedPanel("big", folder, panel), "en"), tmp_path / "back")
+    assert len(list((tmp_path / "back").iterdir())) == 404
+
+
+@pytest.mark.parametrize(
+    "new",
+    [
+        {"tile": "cover.png"},
+        {"sign_color": "#ffffff"},
+        {"sign_glow": "#ffffff"},
+        {"buttons": [{"id": "a", "keys": "KeyA", "sign": "power"}]},
+    ],
+)
+def test_a_file_with_a_sign_or_a_tile_says_its_format(tmp_path, new):
+    """The program before signs takes a file that says an older number for one
+    it can read, and answers with the name of the field it stumbled over."""
+    for silent in ({}, {"format": 1}, {"format": 2}):
+        with pytest.raises(ValueError, match='signs or a tile says "format": 3'):
+            read_set(write_set(tmp_path / "old", MINIMAL | new | silent))
+    assert read_set(write_set(tmp_path / "new", MINIMAL | new | {"format": 3}))
 
 
 def test_a_set_that_cannot_be_moved_in_leaves_no_draft(tmp_path, monkeypatch):

@@ -1,0 +1,9 @@
+The pictures of this folder (*.svg) that carry an id "mdi-..." are from
+Material Design Icons by Pictogrammers, https://pictogrammers.com, and are
+not changed. They come under the Apache License 2.0: see LICENSE and
+LICENSE-APACHE-2.0.
+
+The rest is a part of Game Remote and comes under its licence: index.json,
+the list of the signs with names in two languages, and the pictures whose
+names begin with "sc-". Those are the signs of its Star Citizen set:
+outlines of the pictures of the set, made by tools/trace_sign.py.

@@ -341,7 +341,8 @@ def test_a_set_with_macros_asks_before_it_becomes_a_game(client, state):
     body = {key: value for key, value in panel.items() if key not in ("id", "format", "language")}
     saved = client.put(f"/api/panels/{panel['id']}", json=body, headers=ORIGIN)
     assert saved.status_code == 200
-    assert json.loads(panel_file(state, panel["id"]).read_text(encoding="utf-8"))["format"] == 2
+    written = json.loads(panel_file(state, panel["id"]).read_text(encoding="utf-8"))
+    assert written["format"] == FORMAT
 
 
 def test_import_needs_the_editors_origin(client):

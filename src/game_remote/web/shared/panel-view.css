@@ -61,7 +61,31 @@
 }
 .btn .label { position: relative; overflow-wrap: anywhere; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 .btn img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-.btn.has-image .label {
+/* The tile of the panel lies under every button that has no picture of its
+   own. It is stretched to the button, whatever its shape: a tile is a frame,
+   and a frame that is cut to fit loses two of its sides. */
+.panel-grid.tiled .btn:not(.has-image) {
+  background-image: var(--tile); background-size: 100% 100%;
+  box-shadow: none;
+}
+/* The sign of a button, above its name: about half of the button, as the
+   pictures of the ready-made set have it. */
+.btn .sign { position: absolute; inset: 11% 14% 27%; pointer-events: none; }
+/* The shape of a sign, wherever it is shown: of the picture --sign only the
+   outline is taken, and it is filled with the colour a panel names, or else
+   with the colour of the text around it. */
+.sign-shape {
+  display: block; width: 100%; height: 100%;
+  background: var(--sign-color, currentColor);
+  -webkit-mask: var(--sign) center / contain no-repeat;
+  mask: var(--sign) center / contain no-repeat;
+}
+/* The glow grows with the letters of the button, which grow with the panel. */
+.panel-grid.glow .btn .sign { filter: drop-shadow(0 0 0.25em var(--sign-glow)); }
+/* A button without a name gives its whole face to the sign. */
+.btn:has(.label:empty) .sign { inset: 14%; }
+.btn.has-image .label,
+.btn.has-sign .label {
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 14px 6px 6px;
   font-size: 0.72em;

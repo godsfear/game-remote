@@ -85,12 +85,13 @@ def needs(panel: Panel) -> str | None:
     """The first version of the program that reads the set, when not every
     version does. An older one answers such a set with an error nobody
     understands, so the page of sets says it."""
-    # Format 2, the one with macros, came with 0.8.0: the program writes that
-    # number into every set it exports, with macros or without. Toggle buttons
-    # came with 0.6.0.
-    if panel.format >= 2 or panel.macros():
-        return "0.8.0"
-    return "0.6.0" if any(button.type == "toggle" for button in panel.buttons) else None
+    # The program writes the number of its format into every set it exports,
+    # whatever the set holds: format 2, the one with macros, came with 0.8.0,
+    # format 3, the one with signs and a tile, with 0.11.0. Toggle buttons came
+    # with 0.6.0.
+    version = {2: "0.8.0", 3: "0.11.0"}.get(max(panel.format, panel.needs_format()))
+    toggles = any(button.type == "toggle" for button in panel.buttons)
+    return version or ("0.6.0" if toggles else None)
 
 
 def catalogue(sources: tuple[Path, ...] = SOURCES) -> list[Path]:

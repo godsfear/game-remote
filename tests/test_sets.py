@@ -90,6 +90,19 @@ def test_a_set_with_macros_names_the_window_they_press_keys_in(tmp_path, capsys)
     assert listed.splitlines()[-1].endswith("needs Game Remote 0.8.0 or newer")
 
 
+def test_the_page_says_which_version_a_set_with_signs_needs(tmp_path):
+    signs = [{"id": "gear", "label": "Gear", "keys": "KeyN", "sign": "sc-landing-gear"}]
+    write_set(tmp_path / "signs", panel={**ELITE, "format": 3, "buttons": signs})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "signs",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.11.0 or newer")
+    # And one the program of that format exported, with nothing of the new in it.
+    write_set(tmp_path / "exported", panel={**ELITE, "format": 3})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "exported",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.11.0 or newer")
+
+
 @pytest.mark.parametrize(
     ("name", "panel", "files", "problem"),
     [

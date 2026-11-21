@@ -2,7 +2,7 @@
 // so what the editor shows is what the phone gets.
 
 // button: { id, label, type: 'tap' | 'hold' | 'toggle' | 'macro', on, color,
-//           image (a URL or null) }
+//           image (a URL or null), sign (a URL or null) }
 export function buttonNode(button) {
   const node = document.createElement('button');
   node.type = 'button';
@@ -21,6 +21,18 @@ export function buttonNode(button) {
     img.onerror = () => { img.remove(); node.classList.remove('has-image'); };
     node.append(img);
     node.classList.add('has-image');
+  }
+  if (button.sign) {
+    // Only the shape of the sign is taken: the panel gives the colour. The
+    // glow lies on a layer of its own, or the shape would cut it off.
+    const sign = document.createElement('span');
+    sign.className = 'sign';
+    const shape = document.createElement('span');
+    shape.className = 'sign-shape';
+    shape.style.setProperty('--sign', `url("${button.sign}")`);
+    sign.append(shape);
+    node.append(sign);
+    node.classList.add('has-sign');
   }
   const label = document.createElement('span');
   label.className = 'label';
@@ -49,6 +61,20 @@ export function layoutGrid(grid, panel, wide = false) {
   grid.classList.toggle('square', panel.shape === 'square');
   grid.style.setProperty('--cols', String(columns));
   grid.style.setProperty('--rows', String(Math.max(1, Math.ceil(panel.buttons.length / columns))));
+}
+
+// What a panel gives to all its buttons: the tile under those that have no
+// picture of their own, and the colour and the glow of their signs.
+// panel: { tile (a URL or null), sign_color, sign_glow }
+export function themeGrid(grid, panel) {
+  const set = (name, value) => (
+    value ? grid.style.setProperty(name, value) : grid.style.removeProperty(name)
+  );
+  grid.classList.toggle('tiled', Boolean(panel.tile));
+  grid.classList.toggle('glow', Boolean(panel.sign_glow));
+  set('--tile', panel.tile ? `url("${panel.tile}")` : null);
+  set('--sign-color', panel.sign_color);
+  set('--sign-glow', panel.sign_glow);
 }
 
 // Puts the panel's background picture behind `node`, or takes it away.
@@ -91,7 +117,8 @@ export function renderTabs(strip, names, current, pick, event = 'click') {
 // Fills `grid` with the panel's buttons and returns the nodes in order.
 export function renderGrid(grid, panel, { wide = false } = {}) {
   layoutGrid(grid, panel, wide);
-  const nodes = panel.buttons.map(buttonNode);
+  themeGrid(grid, panel);
+  const nodes = panel.buttons.map((button) => buttonNode(button));
   grid.replaceChildren(...nodes);
   return nodes;
 }

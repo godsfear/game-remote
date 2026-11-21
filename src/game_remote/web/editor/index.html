@@ -85,6 +85,21 @@
             <button id="background-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
           </div>
         </div>
+        <div class="field"><span data-i18n="editor.tile"></span>
+          <div class="image-row">
+            <span class="thumb" id="tile-thumb"></span>
+            <button id="tile-choose" type="button" data-i18n="editor.chooseImage"></button>
+            <button id="tile-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
+          </div>
+          <p class="hint" data-i18n="editor.tileHint"></p>
+        </div>
+        <div class="field"><span data-i18n="editor.signColors"></span>
+          <div class="image-row" id="sign-colors">
+            <label><input id="sign-color" type="color"> <span data-i18n="editor.signColor"></span></label>
+            <label><input id="sign-glow-on" type="checkbox"> <span data-i18n="editor.signGlow"></span></label>
+            <input id="sign-glow" type="color" disabled>
+          </div>
+        </div>
         <div class="field"><span data-i18n="editor.shape"></span>
           <div class="segmented" id="shape">
             <button type="button" data-shape="fill" data-i18n="editor.shapeFill"></button>
@@ -165,6 +180,7 @@
         </label>
         <div class="field"><span data-i18n="editor.color"></span>
           <div id="colors"></div>
+          <p class="hint" id="color-hint" data-i18n="editor.colorUnderTile" hidden></p>
         </div>
         <div class="field"><span data-i18n="editor.image"></span>
           <div class="image-row">
@@ -172,6 +188,15 @@
             <button id="image-choose" type="button" data-i18n="editor.chooseImage"></button>
             <button id="image-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
           </div>
+        </div>
+        <div class="field"><span data-i18n="editor.sign"></span>
+          <div class="image-row">
+            <span class="thumb" id="sign-thumb"><span class="sign-shape"></span></span>
+            <button id="sign-choose" type="button" data-i18n="editor.chooseSign"></button>
+            <button id="sign-own" type="button" class="quiet" data-i18n="editor.ownSign"></button>
+            <button id="sign-remove" type="button" class="quiet" data-i18n="editor.removeImage"></button>
+          </div>
+          <p class="hint" data-i18n="editor.signHint"></p>
         </div>
         <div class="row">
           <button id="duplicate-button" type="button" class="quiet" data-i18n="editor.duplicate"></button>
@@ -253,6 +278,16 @@
         <button value="cancel" class="quiet" formnovalidate data-i18n="editor.cancel"></button>
       </div>
     </form>
+  </dialog>
+  <!-- The signs that ship with the program: one of them goes onto the button. -->
+  <dialog id="sign-dialog" aria-labelledby="sign-title">
+    <h2 id="sign-title" data-i18n="editor.chooseSign"></h2>
+    <input id="sign-search" type="text" autocomplete="off">
+    <div id="sign-groups"></div>
+    <p id="sign-none" class="hint" data-i18n="editor.noSigns" hidden></p>
+    <div class="row">
+      <button id="sign-cancel" type="button" class="quiet" data-i18n="editor.cancel"></button>
+    </div>
   </dialog>
   <script type="module" src="app.js"></script>
 </body>

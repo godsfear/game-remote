@@ -156,6 +156,9 @@ def test_remote_page_can_be_put_on_the_home_screen(state):
         assert reply.headers["content-type"] == "image/png"
         assert reply.content.startswith(b"\x89PNG")
     assert "<svg" in client.get("/shared/icon.svg").text
+    # A sign is drawn only when it comes as a picture.
+    sign = client.get("/shared/signs/power.svg")
+    assert sign.headers["content-type"].startswith("image/svg+xml")
     assert 'rel="manifest"' in client.get("/").text
 
 

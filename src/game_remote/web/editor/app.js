@@ -10,6 +10,7 @@ const PANEL_STORE = 'gameRemote.editor.panel';
 const IMAGE_MAX_SIDE = 512; // pictures are shrunk to this before upload
 const BACKGROUND_MAX_SIDE = 1920; // a background fills the whole phone screen
 const MAX_SCREENS = 8; // the PC accepts no more
+const GLOW = '#46d7ff'; // the glow a game gets when it is switched on
 const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
 const el = Object.fromEntries([
@@ -29,7 +30,9 @@ const el = Object.fromEntries([
   'same-dialog', 'same-text', 'update', 'update-text', 'check-updates',
   'toggle-on', 'toggle-on-field', 'steps-field', 'step-list', 'add-step',
   'macro-window-hint', 'macros-dialog', 'macros-text', 'reopen-hint',
-  'autostart', 'autostart-field',
+  'autostart', 'autostart-field', 'tile-thumb', 'tile-choose', 'tile-remove', 'sign-color',
+  'sign-glow', 'sign-glow-on', 'sign-thumb', 'sign-choose', 'sign-own', 'sign-remove',
+  'sign-dialog', 'sign-search', 'sign-groups', 'sign-none', 'sign-cancel', 'color-hint',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -181,6 +184,9 @@ function forFile(panel) {
     window: panel.window || null,
     cover: panel.cover || null,
     background: panel.background || null,
+    tile: panel.tile || null,
+    sign_color: panel.sign_color || null,
+    sign_glow: panel.sign_glow || null,
     shape: panel.shape || 'fill',
     screens: screenNames(panel),
     buttons: panel.buttons.filter(ready).map((button) => ({
@@ -193,6 +199,7 @@ function forFile(panel) {
       ...(button.type === 'toggle' && button.on ? { on: true } : {}),
       color: button.color || null,
       image: button.image || null,
+      sign: button.sign || null,
       screen: button.screen || 0,
     })),
   };
@@ -390,6 +397,14 @@ function fillGameForm() {
   el['columns-more'].disabled = panel.columns >= 8;
   showThumb(el['cover-thumb'], el['cover-remove'], panel, panel.cover);
   showThumb(el['background-thumb'], el['background-remove'], panel, panel.background);
+  showThumb(el['tile-thumb'], el['tile-remove'], panel, panel.tile);
+  // Without a colour of their own the signs are white, without a glow they have none.
+  el['sign-color'].value = panel.sign_color || '#ffffff';
+  el['sign-glow-on'].checked = Boolean(panel.sign_glow);
+  el['sign-glow'].disabled = !panel.sign_glow;
+  // Not the colour of the game that was shown before: switching the glow on takes this one.
+  el['sign-glow'].value = panel.sign_glow || GLOW;
+  el['sign-glow'].setAttribute('aria-label', t('editor.signGlow'));
   for (const choice of el.shape.children) {
     choice.setAttribute('aria-pressed', String(choice.dataset.shape === (panel.shape || 'fill')));
   }
@@ -647,7 +662,14 @@ function fillButtonForm() {
     swatch.setAttribute('aria-pressed', String((swatch.dataset.color || null) === (button.color || null)));
   }
   el.colors.querySelector('input').value = button.color || '#2b3040';
+  // The tile of the game lies over the colour of a button that has no picture.
+  el['color-hint'].hidden = !currentPanel().tile || Boolean(button.image);
   showThumb(el['image-thumb'], el['image-remove'], currentPanel(), button.image);
+  el['sign-thumb'].classList.toggle('set', Boolean(button.sign));
+  el['sign-thumb'].firstElementChild.style.setProperty(
+    '--sign', button.sign ? `url("${signPath(currentPanel(), button.sign)}")` : 'none',
+  );
+  el['sign-remove'].hidden = !button.sign;
   fillManual(keysTarget(button));
   const names = screenNames(currentPanel());
   el['button-screen-field'].hidden = names.length < 2;
@@ -879,6 +901,10 @@ const filePath = (panel, name) => {
   return `/panel-files/${panel.id}/${encodeURIComponent(name)}${version ? `?v=${version}` : ''}`;
 };
 const imageUrl = (panel, name) => `url("${filePath(panel, name)}")`;
+// The sign of a button: of the library, or a file of the panel (it has a dot).
+const signPath = (panel, sign) => (
+  sign.includes('.') ? filePath(panel, sign) : `/shared/signs/${sign}.svg`
+);
 
 function showThumb(thumb, removeButton, panel, name) {
   thumb.style.backgroundImage = name ? imageUrl(panel, name) : '';
@@ -888,7 +914,8 @@ function showThumb(thumb, removeButton, panel, name) {
 
 // A photo from a camera is far bigger than a button on a phone screen, so the
 // page shrinks the picture and sends the small copy.
-async function shrink(file, maxSide = IMAGE_MAX_SIDE) {
+// `shape`: the picture becomes a sign, of which only the shape is taken.
+async function shrink(file, maxSide = IMAGE_MAX_SIDE, shape = false) {
   let bitmap;
   try {
     bitmap = await createImageBitmap(file);
@@ -899,7 +926,38 @@ async function shrink(file, maxSide = IMAGE_MAX_SIDE) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const context = canvas.getContext('2d');
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  if (shape) {
+    // Where the shape is: what is not clear. A picture without a clear
+    // background has no shape (it would be a filled square), and one that is
+    // clear all over has none either.
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let [left, top, right, bottom, clear] = [canvas.width, canvas.height, -1, -1, false];
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const alpha = data[(y * canvas.width + x) * 4 + 3];
+        if (alpha < 128) clear = true;
+        if (alpha > 8) {
+          [left, top, right, bottom] = [Math.min(left, x), Math.min(top, y), Math.max(right, x), Math.max(bottom, y)];
+        }
+      }
+    }
+    if (!clear) throw new Error(t('editor.signOpaque'));
+    if (right < 0) throw new Error(t('editor.signEmpty'));
+    // The shape is drawn anew from the picture itself, with the margin the
+    // signs of the program have: a tenth of its size on every side. So a sign
+    // of one's own is as large on a button as theirs, whatever was around it.
+    const [x, y] = [left / scale, top / scale];
+    const [width, height] = [(right - left + 1) / scale, (bottom - top + 1) / scale];
+    const fit = Math.min(1, maxSide / 1.2 / Math.max(width, height));
+    const margin = Math.round(Math.max(width, height) * fit / 10);
+    canvas.width = Math.max(1, Math.round(width * fit)) + 2 * margin;
+    canvas.height = Math.max(1, Math.round(height * fit)) + 2 * margin;
+    context.drawImage(
+      bitmap, x, y, width, height, margin, margin, canvas.width - 2 * margin, canvas.height - 2 * margin,
+    );
+  }
   for (const type of ['image/webp', 'image/png']) {
     const blob = await new Promise((resolve) => { canvas.toBlob(resolve, type, 0.85); });
     if (blob && blob.type === type) return blob;
@@ -907,7 +965,9 @@ async function shrink(file, maxSide = IMAGE_MAX_SIDE) {
   throw new Error(t('editor.imageError'));
 }
 
-let fileTarget = null; // 'cover', 'background' or the id of the button that gets the picture
+// What gets the picture: 'cover', 'background', 'tile', the id of a button
+// (its picture) or 'sign:' and the id of a button (its sign).
+let fileTarget = null;
 
 function chooseFile(target) {
   fileTarget = target;
@@ -919,7 +979,8 @@ async function fileChosen() {
   const [file] = el.file.files;
   const panel = currentPanel();
   if (!file || !panel) return;
-  const blob = await shrink(file, fileTarget === 'background' ? BACKGROUND_MAX_SIDE : IMAGE_MAX_SIDE);
+  const side = fileTarget === 'background' ? BACKGROUND_MAX_SIDE : IMAGE_MAX_SIDE;
+  const blob = await shrink(file, side, fileTarget.startsWith('sign:'));
   const response = await fetch(`/api/panels/${panel.id}/images`, {
     method: 'POST',
     body: blob,
@@ -931,12 +992,13 @@ async function fileChosen() {
 }
 
 function setPicture(panel, target, name) {
-  if (target === 'cover' || target === 'background') {
+  if (['cover', 'background', 'tile'].includes(target)) {
     panel[target] = name;
   } else {
-    const button = panel.buttons.find((candidate) => candidate.id === target);
+    const [id, field] = target.startsWith('sign:') ? [target.slice(5), 'sign'] : [target, 'image'];
+    const button = panel.buttons.find((candidate) => candidate.id === id);
     if (!button) return;
-    button.image = name;
+    button[field] = name;
     if (!ready(button)) { // a draft: nothing to save yet
       renderAll();
       return;
@@ -947,6 +1009,60 @@ function setPicture(panel, target, name) {
   setSaveState('pending');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, SAVE_DELAY_MS);
+}
+
+// ---- signs -----------------------------------------------------------------
+
+let signGroups = null; // the signs that ship with the program, group by group
+// As a search compares words: without capitals, and "ё" typed as "е" is the same letter.
+const plain = (text) => text.toLowerCase().replaceAll('ё', 'е');
+
+async function openSigns() {
+  signGroups ??= await api('/shared/signs/index.json');
+  const lang = currentLanguage();
+  const chosen = selectedButton()?.sign;
+  el['sign-groups'].replaceChildren(...signGroups.map((group) => {
+    const section = node('section');
+    const grid = node('div', 'sign-grid');
+    for (const [name, texts] of Object.entries(group.signs)) {
+      const choice = node('button');
+      choice.type = 'button';
+      choice.dataset.sign = name;
+      // Found by its name and by the name of its group, in either language.
+      choice.dataset.words = plain([texts.ru, texts.en, name, group.ru, group.en].join(' '));
+      choice.setAttribute('aria-pressed', String(name === chosen));
+      const shape = node('span', 'sign-shape');
+      shape.style.setProperty('--sign', `url("/shared/signs/${name}.svg")`);
+      choice.append(shape, node('span', '', texts[lang] || texts.en));
+      grid.append(choice);
+    }
+    section.append(node('h3', '', group[lang] || group.en), grid);
+    return section;
+  }));
+  el['sign-search'].value = '';
+  el['sign-search'].placeholder = t('editor.signSearch');
+  el['sign-search'].setAttribute('aria-label', t('editor.signSearch'));
+  filterSigns();
+  el['sign-dialog'].showModal();
+  // The sign the button has is in sight, wherever in the list it stands.
+  el['sign-groups'].scrollTop = 0;
+  el['sign-groups'].querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'center' });
+}
+
+// Shows the signs that have every word of the search, and the groups that have such signs.
+function filterSigns() {
+  const words = plain(el['sign-search'].value).split(/\s+/).filter(Boolean);
+  let found = 0;
+  for (const section of el['sign-groups'].children) {
+    let shown = 0;
+    for (const choice of section.querySelectorAll('button')) {
+      choice.hidden = !words.every((word) => choice.dataset.words.includes(word));
+      if (!choice.hidden) shown += 1;
+    }
+    section.hidden = shown === 0;
+    found += shown;
+  }
+  el['sign-none'].hidden = found > 0;
 }
 
 // ---- preview ---------------------------------------------------------------
@@ -964,9 +1080,13 @@ function renderPreview() {
   const shown = {
     columns: panel.columns,
     shape: panel.shape,
+    tile: panel.tile ? filePath(panel, panel.tile) : null,
+    sign_color: panel.sign_color,
+    sign_glow: panel.sign_glow,
     buttons: buttons.map((button) => ({
       ...button,
       image: button.image ? filePath(panel, button.image) : null,
+      sign: button.sign ? signPath(panel, button.sign) : null,
     })),
   };
   el['preview-empty'].hidden = shown.buttons.length > 0;
@@ -1248,6 +1368,32 @@ for (const choice of el.shape.children) {
 }
 el['image-choose'].addEventListener('click', () => chooseFile(selectedId));
 el['image-remove'].addEventListener('click', () => setPicture(currentPanel(), selectedId, null));
+el['tile-choose'].addEventListener('click', () => chooseFile('tile'));
+el['tile-remove'].addEventListener('click', () => setPicture(currentPanel(), 'tile', null));
+el['sign-color'].addEventListener('input', () => {
+  currentPanel().sign_color = el['sign-color'].value === '#ffffff' ? null : el['sign-color'].value;
+  renderPreview();
+  changed();
+});
+const setGlow = () => {
+  el['sign-glow'].disabled = !el['sign-glow-on'].checked;
+  currentPanel().sign_glow = el['sign-glow-on'].checked ? el['sign-glow'].value : null;
+  renderPreview();
+  changed();
+};
+el['sign-glow-on'].addEventListener('change', setGlow);
+el['sign-glow'].addEventListener('input', setGlow);
+el['sign-choose'].addEventListener('click', report(openSigns));
+el['sign-own'].addEventListener('click', () => chooseFile(`sign:${selectedId}`));
+el['sign-remove'].addEventListener('click', () => setPicture(currentPanel(), `sign:${selectedId}`, null));
+el['sign-search'].addEventListener('input', filterSigns);
+el['sign-cancel'].addEventListener('click', () => el['sign-dialog'].close());
+el['sign-groups'].addEventListener('click', (event) => {
+  const choice = event.target.closest('button[data-sign]');
+  if (!choice) return;
+  el['sign-dialog'].close();
+  setPicture(currentPanel(), `sign:${selectedId}`, choice.dataset.sign);
+});
 el.file.addEventListener('change', report(fileChosen));
 el.language.addEventListener('change', report(async () => {
   const saved = await api('/api/settings', { method: 'PUT', body: { language: el.language.value } });

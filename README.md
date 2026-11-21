@@ -106,3 +106,5 @@ A release is built by the `Release` workflow: push a tag such as `v0.1.0` or sta
 ## License
 
 [MIT](LICENSE)
+
+The icons the program offers for buttons are from [Material Design Icons](https://pictogrammers.com/library/mdi/) by Pictogrammers and come under the Apache License 2.0. They lie in [`src/game_remote/web/shared/signs`](src/game_remote/web/shared/signs) with their licence; the `NOTICE` there says which icons are the program's own.

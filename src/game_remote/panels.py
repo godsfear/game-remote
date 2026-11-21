@@ -11,6 +11,7 @@ The folder is also the exchange format: zip it and you have a panel file.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import json
 import logging
@@ -32,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from game_remote.config import system_language
 from game_remote.files import replace_file
 from game_remote.input.keys import Combo
-from game_remote.web import sample_dir
+from game_remote.web import sample_dir, web_dir
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +46,10 @@ PANEL_FILE = "panel.json"
 # new and says an older number is refused (see parse_panel).
 #   1  what the versions up to 0.7.0 read
 #   2  macros: buttons of the type "macro" with their "steps"
-FORMAT = 2
+#   3  a button is put together: the "tile" of the panel under the "sign" of
+#      the button, in the "sign_color" and with the "sign_glow" of the panel.
+#      The signs the program ships belong to the format: a new one is a new number.
+FORMAT = 3
 # The ready-made panel a new user starts with: Star Citizen with the keys the
 # game has by default. It ships with the program as a set, in ``samples``.
 SAMPLE_ID = "star-citizen"
@@ -53,6 +57,9 @@ SAMPLE_ID = "star-citizen"
 OLD_DEMO_ID = "demo"
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,40}$"
 IMAGE_PATTERN = r"^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
+# A sign of one's own: a picture with a clear background, of which only the
+# shape is taken. A JPEG has no clear background.
+_SIGN_FILE_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|webp)$")
 _ID_RE = re.compile(ID_PATTERN)
 _IMAGE_RE = re.compile(IMAGE_PATTERN)
 # Names the editor gives to uploaded images; only these are ever cleaned up.
@@ -61,10 +68,11 @@ _UPLOAD_RE = re.compile(r"^img-[0-9a-f]{12}\.(png|jpg|webp)$")
 _RESERVED_RE = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")
 MAX_IMAGE_BYTES = 2_000_000
 # A set that arrives as a zip: the whole file, one of its texts, the files it may hold
-# (a picture for every button, a cover, a background and the translations).
+# (a picture and a sign for every button, a cover, a background, a tile and the
+# translations). The program reads every set it writes.
 MAX_SET_BYTES = 50_000_000
 MAX_SET_TEXT_BYTES = 1_000_000
-MAX_SET_FILES = 250
+MAX_SET_FILES = 450
 MAX_SCREENS = 8
 # A macro: how many steps, how long one of them holds its keys or waits, and
 # how long the whole of it may take.
@@ -102,6 +110,20 @@ class SameName(Exception):
         super().__init__(f"a game called {name!r} is here already")
         self.panel_id = panel_id
         self.name = name
+
+
+@functools.cache
+def sign_names() -> frozenset[str]:
+    """Names of the signs that ship with the program (``web/shared/signs``)."""
+    index = web_dir("shared") / "signs" / "index.json"
+    groups = json.loads(index.read_text(encoding="utf-8"))
+    return frozenset(name for group in groups for name in group["signs"])
+
+
+def is_file(sign: str | None) -> bool:
+    """Whether the sign of a button is a file of its panel. A sign of the
+    library is named without a dot."""
+    return bool(sign) and "." in sign
 
 
 def image_extension(data: bytes) -> str | None:
@@ -155,8 +177,12 @@ class Button(BaseModel):
     # game: it counts its own presses from this state.
     on: bool = False
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
-    # A file in the panel folder.
+    # A file in the panel folder: the whole face of the button.
     image: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # What is drawn on the button over its picture, over the tile of the panel
+    # or over its colour: a sign of the library ("power") or a file in the
+    # panel folder ("gear.png"). Only its shape counts; the panel colours it.
+    sign: str | None = None
     # Which of the panel's screens shows the button: an index into ``screens``.
     screen: int = Field(default=0, ge=0, lt=MAX_SCREENS)
 
@@ -164,6 +190,15 @@ class Button(BaseModel):
     @classmethod
     def _normalise_keys(cls, value: str | None) -> str | None:
         return None if value is None else Combo.parse(value).serialize()
+
+    @field_validator("sign")
+    @classmethod
+    def _a_sign_of_the_library_or_a_file(cls, value: str | None) -> str | None:
+        if value is None or _SIGN_FILE_RE.match(value) or value in sign_names():
+            return value
+        if "." in value:
+            raise ValueError("a sign of one's own is a .png or .webp file of the panel")
+        raise ValueError(f"the program has no sign {value!r}")
 
     @model_validator(mode="after")
     def _only_a_toggle_starts_on(self) -> Button:
@@ -207,7 +242,7 @@ class Panel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Every format this program reads; FORMAT is the newest of them.
-    format: Literal[1, 2] = 1
+    format: Literal[1, 2, 3] = 1
     # Only in a panel that is shared as a set (see PanelSet): the language its
     # texts are in, e.g. "en". A panel in the user's own folder does not carry it.
     language: str | None = Field(default=None, pattern=r"^[a-z]{2}$")
@@ -220,6 +255,13 @@ class Panel(BaseModel):
     cover: str | None = Field(default=None, pattern=IMAGE_PATTERN)
     # Picture behind the buttons on the phone; a file in the panel folder.
     background: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # Picture under every button that has none of its own; a file in the panel
+    # folder. Without it such a button shows its colour.
+    tile: str | None = Field(default=None, pattern=IMAGE_PATTERN)
+    # The colour the signs of the buttons are drawn in, and of the glow around
+    # them. Without the first they are white, without the second they do not glow.
+    sign_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    sign_glow: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     # fill: the buttons share the whole screen. square: they stay square and
     # sit in the middle, so a background shows around them.
     shape: Literal["fill", "square"] = "fill"
@@ -254,9 +296,16 @@ class Panel(BaseModel):
         """How many of the buttons are macros."""
         return sum(button.type == "macro" for button in self.buttons)
 
+    def needs_format(self) -> int:
+        """The first format that holds what this panel has."""
+        if self.tile or self.sign_color or self.sign_glow or any(b.sign for b in self.buttons):
+            return 3
+        return 2 if self.macros() else 1
+
     def images(self) -> set[str]:
         """Names of the picture files the panel shows."""
-        names = {self.cover, self.background, *(b.image for b in self.buttons)}
+        names = {self.cover, self.background, self.tile, *(b.image for b in self.buttons)}
+        names.update(b.sign for b in self.buttons if is_file(b.sign))
         return {name for name in names if name}
 
 
@@ -282,6 +331,10 @@ class LoadedPanel:
         version = self._version(name)
         return f"/panel-files/{self.id}/{name}" + (f"?v={version}" if version else "")
 
+    def _sign_url(self, sign: str | None) -> str | None:
+        """Address of the sign of a button: of the library, or a file of this panel."""
+        return self._url(sign) if not sign or is_file(sign) else f"/shared/signs/{sign}.svg"
+
     def versions(self) -> dict[str, int | None]:
         """The time of every picture of the panel, by file name. The editor
         puts it into its addresses, like ``_url`` does for the phone."""
@@ -300,6 +353,9 @@ class LoadedPanel:
             "shape": self.panel.shape,
             "cover": self._url(self.panel.cover),
             "background": self._url(self.panel.background),
+            "tile": self._url(self.panel.tile),
+            "sign_color": self.panel.sign_color,
+            "sign_glow": self.panel.sign_glow,
             "screens": self.panel.screens,
             "buttons": [
                 {
@@ -309,6 +365,7 @@ class LoadedPanel:
                     "on": b.on,
                     "color": b.color,
                     "image": self._url(b.image),
+                    "sign": self._sign_url(b.sign),
                     "screen": b.screen,
                 }
                 for b in self.panel.buttons
@@ -336,10 +393,13 @@ def parse_panel(data: object) -> Panel:
     if newer and data["format"] > FORMAT:
         raise NewerFormat
     panel = Panel.model_validate(data)
-    # The program before macros takes a file that says nothing for format 1
-    # and stumbles over the macro: such a file has to say what it is.
-    if panel.macros() and data.get("format", 1) < 2:
-        raise ValueError('a panel with a macro says "format": 2')
+    # A program before what the panel has takes a file that says an older
+    # number, or none, for a file it can read, and stumbles over what is new:
+    # such a file has to say what it is.
+    needs = panel.needs_format()
+    if data.get("format", 1) < needs:
+        what = {2: "a macro", 3: "signs or a tile"}[needs]
+        raise ValueError(f'a panel with {what} says "format": {needs}')
     return panel
 
 
@@ -462,7 +522,8 @@ def pack_set(loaded: LoadedPanel, language: str | None) -> bytes:
     found = {name for name in loaded.panel.images() if (loaded.folder / name).is_file()}
 
     def kept(name: str | None) -> str | None:
-        return name if name in found else None
+        # A sign of the library is no file: it is in every program of this format.
+        return name if name in found or (name and not is_file(name)) else None
 
     source = loaded.panel
     panel = source.model_copy(
@@ -470,7 +531,11 @@ def pack_set(loaded: LoadedPanel, language: str | None) -> bytes:
             "language": language,
             "cover": kept(source.cover),
             "background": kept(source.background),
-            "buttons": [b.model_copy(update={"image": kept(b.image)}) for b in source.buttons],
+            "tile": kept(source.tile),
+            "buttons": [
+                b.model_copy(update={"image": kept(b.image), "sign": kept(b.sign)})
+                for b in source.buttons
+            ],
         }
     )
     out = io.BytesIO()

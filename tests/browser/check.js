@@ -88,8 +88,10 @@ function writePanel(id, panel) {
   fs.writeFileSync(path.join(folder, 'panel.json'), text);
 }
 
-// A plain PNG of the given size, to upload as a button picture.
-function png(width, height, [red, green, blue]) {
+// A plain PNG of the given size, to upload as a button picture. With `alpha`
+// it is as clear as that all over: 0 is not there at all, 255 is solid. With
+// `solid` = [left, top, right, bottom] the pixels of that box are solid.
+function png(width, height, [red, green, blue], alpha, solid) {
   const chunk = (type, data) => {
     const body = Buffer.concat([Buffer.from(type), data]);
     const head = Buffer.alloc(4);
@@ -101,9 +103,13 @@ function png(width, height, [red, green, blue]) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
-  header.set([8, 2, 0, 0, 0], 8); // 8 bits per channel, RGB
-  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, Buffer.from([red, green, blue]))]);
-  const pixels = Buffer.concat(Array.from({ length: height }, () => row));
+  const pixel = alpha === undefined ? [red, green, blue] : [red, green, blue, alpha];
+  header.set([8, pixel.length === 4 ? 6 : 2, 0, 0, 0], 8); // 8 bits per channel, RGB or RGBA
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * pixel.length, Buffer.from(pixel))]);
+  const [left, top, right, bottom] = solid || [0, 0, 0, 0];
+  const crossed = Buffer.from(row);
+  for (let x = left; x < right; x += 1) crossed[1 + x * 4 + 3] = 255;
+  const pixels = Buffer.concat(Array.from({ length: height }, (_, y) => (y >= top && y < bottom ? crossed : row)));
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', header),
@@ -699,7 +705,7 @@ async function main() {
   const macroInFile = fileOfGame().buttons[1];
   ok('a macro is saved with its steps and without keys of its own', macroInFile.type === 'macro' && !('keys' in macroInFile)
     && JSON.stringify(macroInFile.steps) === JSON.stringify([{ keys: 'KeyM', wait: 300 }, { keys: 'Enter', hold: 200 }]));
-  ok('the file says the format that has macros', fileOfGame().format === 2);
+  ok('the file says a format that has macros', fileOfGame().format >= 2);
   ok('the list of buttons names the number of steps',
     (await desk.locator('#button-list li[aria-current="true"] .keys').textContent()).includes('2'));
   ok('the preview marks a macro', (await desk.locator('#preview .btn.macro').count()) === 1);
@@ -887,6 +893,198 @@ async function main() {
   )));
   ok('the old picture stays after a refused file', (await stored('game')).buttons[1].image === picture);
   await shot(desk, 'pc-editor-picture', { fullPage: true });
+
+  // ---- a button put together of a tile and a sign ----------------------------
+  const drawn = (view, grid) => view.evaluate((selector) => (
+    [...document.querySelectorAll(`${selector} .btn`)].map((button) => {
+      const shape = button.querySelector('.sign span');
+      const style = shape && getComputedStyle(shape);
+      const edge = (node) => node.getBoundingClientRect();
+      return {
+        tile: /img-[0-9a-f]{12}/.test(getComputedStyle(button).backgroundImage),
+        whole: getComputedStyle(button).backgroundSize === '100% 100%',
+        picture: Boolean(button.querySelector('img')),
+        sign: style ? (style.maskImage || style.webkitMaskImage) : '',
+        color: style ? style.backgroundColor : '',
+        glow: shape ? getComputedStyle(shape.parentElement).filter : '',
+        above: shape ? edge(shape).bottom <= edge(button.querySelector('.label')).bottom
+          && edge(shape).width > edge(button).width / 3 : null,
+      };
+    })
+  ), grid);
+  const setColor = (id, value) => desk.locator(id).evaluate((input, color) => {
+    input.value = color;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, value);
+  const shownSigns = () => desk.locator('#sign-groups button:visible').evaluateAll(
+    (all) => all.map((choice) => choice.dataset.sign),
+  );
+  // Pixels, not styles: the sign of the first button is there, and it is a
+  // shape and not a filled square. A shape that did not load paints nothing.
+  const painted = async (view, grid) => {
+    const sign = view.locator(`${grid} .btn .sign`).first();
+    const with_ = async (property, value) => {
+      const shape = sign.locator('span');
+      await shape.evaluate((node, [name, set]) => node.style.setProperty(name, set, 'important'), [property, value]);
+      const picture = await sign.screenshot();
+      await shape.evaluate((node, name) => node.style.removeProperty(name), property);
+      return picture;
+    };
+    const [drawn_, hidden, square] = [
+      await sign.screenshot(), await with_('visibility', 'hidden'), await with_('mask-image', 'none'),
+    ];
+    return !drawn_.equals(hidden) && !drawn_.equals(square) && !hidden.equals(square);
+  };
+
+  // The game gets a tile, and its signs a colour and a glow.
+  await pick('#tile-choose', { name: 'tile.png', mimeType: 'image/png', buffer: png(64, 64, [20, 40, 60]) });
+  ok('the tile is saved into the panel', await until(async () => /^img-[0-9a-f]{12}\./.test((await stored('game')).tile || '')));
+  await setColor('#sign-color', '#dcfaff');
+  ok('the glow has no colour to pick while it is off', await desk.locator('#sign-glow').isDisabled());
+  await desk.check('#sign-glow-on');
+  ok('the colour and the glow of the signs are saved', await until(async () => {
+    const game = await stored('game');
+    return game.sign_color === '#dcfaff' && game.sign_glow === '#46d7ff';
+  }));
+  ok('the colour of the glow has a name for who cannot see it',
+    (await desk.locator('#sign-glow').getAttribute('aria-label')) === 'Свечение');
+  // Another game does not inherit the glow of the one that was shown before it.
+  await setColor('#sign-glow', '#ff0000');
+  await until(async () => (await stored('game')).sign_glow === '#ff0000');
+  await desk.locator('#game-list button', { hasText: 'Демо' }).click();
+  ok('a game without a glow offers the usual colour for it, not the one of another game',
+    (await desk.locator('#sign-glow').inputValue()) === '#46d7ff'
+    && await desk.locator('#sign-glow').isDisabled() && !(await desk.locator('#sign-glow-on').isChecked()));
+  await desk.locator('#game-list button', { hasText: 'Elite' }).click();
+  ok('and the game shows its own again', (await desk.locator('#sign-glow').inputValue()) === '#ff0000');
+  await setColor('#sign-glow', '#46d7ff');
+  await until(async () => (await stored('game')).sign_glow === '#46d7ff');
+
+  // The first button gets a sign of the library: found by a word, in either language.
+  await desk.locator('#button-list li').first().click();
+  ok('the page says that the tile covers the colour of the button', await desk.locator('#color-hint').isVisible());
+  await desk.click('#sign-choose');
+  await until(async () => (await shownSigns()).length > 0);
+  const allSigns = await shownSigns();
+  ok('the window lists the signs of the program by groups',
+    allSigns.length > 300 && (await desk.locator('#sign-groups h3').count()) === 13, String(allSigns.length));
+  await desk.fill('#sign-search', 'шасси');
+  ok('a sign is found by its name', (await shownSigns()).join() === 'sc-landing-gear', (await shownSigns()).join());
+  ok('the groups without a found sign are hidden', (await desk.locator('#sign-groups h3:visible').count()) === 1);
+  await desk.fill('#sign-search', 'самолет');
+  ok('a word typed with "е" finds the sign whose name has "ё"', (await shownSigns()).join() === 'airplane', (await shownSigns()).join());
+  await desk.fill('#sign-search', 'Landing GEAR');
+  ok('and by its name in the other language', (await shownSigns()).join() === 'sc-landing-gear');
+  await desk.fill('#sign-search', 'star citizen');
+  ok('the name of a group finds its signs', (await shownSigns()).length === 18);
+  await desk.fill('#sign-search', 'нет такого значка');
+  ok('a search that finds nothing says what to do',
+    (await shownSigns()).length === 0 && await desk.locator('#sign-none').isVisible());
+  await shot(desk, 'pc-signs-none');
+  await desk.fill('#sign-search', 'питание');
+  await shot(desk, 'pc-signs-search');
+  await desk.fill('#sign-search', '');
+  await shot(desk, 'pc-signs');
+  await desk.locator('#sign-groups button[data-sign="power"]').click();
+  ok('the chosen sign is saved and the window is gone', await until(async () => (
+    (await stored('game')).buttons[0].sign === 'power' && !(await desk.locator('#sign-dialog').isVisible())
+  )));
+  ok('the button shows its sign next to the choice',
+    (await desk.locator('#sign-thumb .sign-shape').evaluate((shape) => shape.style.getPropertyValue('--sign'))).includes('power.svg')
+    && await desk.locator('#sign-remove').isVisible());
+  await desk.click('#sign-choose');
+  ok('the window marks the sign the button has',
+    (await desk.locator('#sign-groups button[aria-pressed="true"]').getAttribute('data-sign')) === 'power');
+  ok('the window and its search have names for who cannot see them', await desk.evaluate(() => (
+    document.getElementById(document.getElementById('sign-dialog').getAttribute('aria-labelledby')).textContent
+  )) === 'Выбрать значок' && Boolean(await desk.locator('#sign-search').getAttribute('aria-label')));
+  await desk.keyboard.press('Escape');
+  ok('Escape closes the window and keeps the sign', !(await desk.locator('#sign-dialog').isVisible())
+    && (await stored('game')).buttons[0].sign === 'power');
+  // A sign from the end of the list: the window opens where it stands.
+  const inSight = () => desk.evaluate(() => {
+    const list = document.getElementById('sign-groups').getBoundingClientRect();
+    const mark = document.querySelector('#sign-groups button[aria-pressed="true"]').getBoundingClientRect();
+    const top = document.getElementById('sign-groups').scrollTop;
+    return { top, seen: mark.top >= list.top - 1 && mark.bottom <= list.bottom + 1, mark: [mark.top, mark.bottom], list: [list.top, list.bottom] };
+  });
+  await desk.click('#sign-choose');
+  await desk.locator('#sign-groups button[data-sign="sc-dance"]').click();
+  await until(async () => (await stored('game')).buttons[0].sign === 'sc-dance');
+  await desk.click('#sign-choose');
+  ok('the window opens at the sign the button has, also at the end of the list',
+    (await inSight()).top > 0 && (await inSight()).seen, JSON.stringify(await inSight()));
+  await desk.fill('#sign-search', 'питание');
+  await desk.locator('#sign-groups button[data-sign="power"]').click();
+  await until(async () => (await stored('game')).buttons[0].sign === 'power');
+  await desk.click('#sign-choose');
+  ok('and at the top when the sign is at the top',
+    (await inSight()).top === 0 && (await inSight()).seen, JSON.stringify(await inSight()));
+  await desk.keyboard.press('Escape');
+
+  // The button with a picture gets a sign of its own: a picture with a clear background.
+  await desk.locator('#button-list li', { hasText: 'Связь' }).click();
+  ok('a button without a sign has nothing to remove', await desk.locator('#sign-remove').isHidden());
+  ok('a button with a picture is not told about the tile: its picture covers the colour', await desk.locator('#color-hint').isHidden());
+  await pick('#sign-own', { name: 'photo.png', mimeType: 'image/png', buffer: png(64, 64, [255, 255, 255]) });
+  ok('a picture without a clear background is refused as a sign, with a reason', await until(async () => (
+    (await desk.locator('#save-state').textContent()).includes('прозрачн')
+  )));
+  ok('and the button stays without a sign', !(await stored('game')).buttons[1].sign);
+  await pick('#sign-own', { name: 'nothing.png', mimeType: 'image/png', buffer: png(64, 64, [255, 255, 255], 0) });
+  ok('a picture that is clear all over is refused too, with its own reason', await until(async () => (
+    (await desk.locator('#save-state').textContent()).includes('целиком')
+  )));
+  // A shape of 100 x 80 in the middle of a clear picture of 200 x 200.
+  const withMargins = png(200, 200, [255, 255, 255], 0, [50, 60, 150, 140]);
+  await pick('#sign-own', { name: 'shape.png', mimeType: 'image/png', buffer: withMargins });
+  ok('a sign of one\'s own is saved into the panel', await until(async () => (
+    /^img-[0-9a-f]{12}\.(webp|png)$/.test((await stored('game')).buttons[1].sign || '')
+  )));
+  const ownSign = (await stored('game')).buttons[1].sign;
+  const ownSize = await desk.evaluate(async (url) => {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return [image.naturalWidth, image.naturalHeight];
+  }, `/panel-files/game/${ownSign}`);
+  ok('the clear margins of the picture give way to the margin the signs of the program have',
+    ownSize.join('x') === '120x100', ownSize.join('x'));
+
+  for (const [name, view, grid] of [['the phone', page, '#grid'], ['the preview', desk, '#preview']]) {
+    await until(async () => (await drawn(view, grid)).filter((button) => button.sign).length === 2);
+    const buttons = await drawn(view, grid);
+    const [library, own] = [buttons[0], buttons.find((button) => button.picture)];
+    ok(`${name} draws a sign of the library in the colour of the panel, with its glow`,
+      library.sign.includes('/shared/signs/power.svg') && library.color === 'rgb(220, 250, 255)'
+      && library.glow.includes('drop-shadow') && library.above, JSON.stringify(library));
+    ok(`${name} lays the whole tile under the button that has no picture`,
+      library.tile && library.whole && !own.tile, JSON.stringify([library, own]));
+    ok(`${name} paints the sign: a shape, not a square and not nothing`, await painted(view, grid));
+    ok(`${name} draws a sign of the panel's own over the picture of its button`,
+      own.sign.includes(`/panel-files/game/${ownSign}`) && own.above, JSON.stringify(own));
+    ok(`${name} is given the sign`, await view.evaluate(async () => (await fetch('/shared/signs/power.svg')).ok));
+  }
+  await shot(page, 'phone-signs');
+  await shot(desk, 'pc-editor-signs', { fullPage: true });
+
+  // All of it is taken away again.
+  await desk.click('#sign-remove');
+  await desk.locator('#button-list li').first().click();
+  await desk.click('#sign-remove');
+  await desk.click('#tile-remove');
+  ok('without a tile the colour of the button needs no word', await desk.locator('#color-hint').isHidden());
+  await desk.uncheck('#sign-glow-on');
+  await setColor('#sign-color', '#ffffff');
+  ok('a panel that lost its tile and signs is saved without them', await until(async () => {
+    const game = fileOfGame();
+    return !('tile' in game) && !('sign_color' in game) && !('sign_glow' in game)
+      && game.buttons.every((button) => !('sign' in button));
+  }));
+  ok('and is drawn plain again', await until(async () => (
+    (await drawn(page, '#grid')).every((button) => !button.sign && !button.tile)
+    && (await drawn(desk, '#preview')).every((button) => !button.sign && !button.tile)
+  )));
 
   // ---- one language for all devices -----------------------------------------
   await desk.selectOption('#language', 'en');
