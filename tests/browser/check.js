@@ -70,6 +70,23 @@ function killServer() {
   server = null;
 }
 
+// Takes a temporary folder away. The program was stopped a moment ago and
+// holds its files for a second yet: Windows refuses then, so the removal is
+// tried again after a pause. (The retries of fs.rmSync itself did not help:
+// in Node 24 they were over before the files were let go.) A folder that
+// stays is left in the temporary folder of the system and is no failure.
+async function removeFolder(folder) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      fs.rmSync(folder, { recursive: true, force: true });
+      return;
+    } catch {
+      await sleep(250);
+    }
+  }
+  console.warn(`could not remove ${folder}`);
+}
+
 const status = async () => (await fetch(`${editor}/api/status`)).json();
 // The link inside the QR code, pointed at this machine. Its code works once.
 const pairLink = async () => {
@@ -126,7 +143,7 @@ function seedDemo() {
   fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ samples: ['star-citizen'] }));
 }
 
-// Where every button of the panel lies, and whether the pictures are there.
+// Where every button of the panel lies, what lies under it and which sign it has.
 const tiles = (page, grid) => page.evaluate((selector) => {
   const box = (node) => {
     const { left, top, right, bottom, width, height } = node.getBoundingClientRect();
@@ -137,7 +154,10 @@ const tiles = (page, grid) => page.evaluate((selector) => {
   return {
     grid: box(area),
     buttons: buttons.map(box),
-    pictures: buttons.map((node) => node.querySelector('img')?.naturalWidth || 0),
+    under: buttons.map((node) => getComputedStyle(node).backgroundImage),
+    signs: buttons.map((node) => (
+      (node.querySelector('.sign-shape')?.style.getPropertyValue('--sign') || '').match(/signs\/(.+)\.svg/)?.[1] || ''
+    )),
   };
 }, grid);
 
@@ -153,7 +173,8 @@ function squaresFit({ grid, buttons }, least) {
     && buttons.every((a, i) => buttons.every((b, j) => i === j || apart(a, b)));
 }
 
-// A new user's first start: the ready-made Star Citizen panel with its pictures.
+// A new user's first start: the ready-made Star Citizen panel, its buttons put
+// together of one tile and the signs of the program.
 async function firstRun(browser, ports, phoneOptions, watch) {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'game-remote-first-'));
   await startServer(ports, folder);
@@ -168,7 +189,12 @@ async function firstRun(browser, ports, phoneOptions, watch) {
       'it has the six buttons in the system language',
       (await page.locator('.btn .label').allTextContents()).join() === 'Flight Ready,ATC,Шасси,Фары,VTOL,Карта'
     );
-    ok('every button has its picture', await until(async () => (await tiles(page, '#grid')).pictures.join() === '512,512,512,512,512,512'));
+    ok('every button lies on the tile of the game and has its sign', await until(async () => {
+      const { under, signs } = await tiles(page, '#grid');
+      return under.every((picture) => picture.includes('/panel-files/star-citizen/tile.jpg'))
+        && signs.join() === 'sc-flight-ready,sc-atc,sc-landing-gear,sc-headlights,sc-vtol,sc-starmap';
+    }));
+    ok('and no picture of its own', (await page.locator('#grid .btn img').count()) === 0);
     const background = () => page.evaluate(async () => {
       const url = getComputedStyle(document.body).backgroundImage.slice(5, -2);
       const picture = new Image();
@@ -191,10 +217,15 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     ok('ATC presses left Alt + N', await until(async () => (await status()).recent[0]?.keys === 'Alt+N'), JSON.stringify((await status()).recent[0]));
     ok('no key stays down after the taps', await until(async () => (await held()) === '[]'));
 
-    // The marks of a button lie above its picture. A strip of its left edge and
+    // The marks of a button lie above its tile. A strip of its left edge and
     // its top right corner, as pictures: they change when the mark does.
     const strips = async (view, node) => {
-      await view.waitForFunction(() => [...document.querySelectorAll('.btn img')].every((img) => img.complete && img.naturalWidth));
+      // The tile is there before the pictures are taken: it would change them too.
+      await view.evaluate(async () => {
+        const picture = new Image();
+        picture.src = getComputedStyle(document.querySelector('.btn')).backgroundImage.slice(5, -2);
+        await picture.decode();
+      });
       const box = await node.boundingBox();
       const edge = { x: box.x, y: box.y + box.height / 2 - 10, width: 8, height: 20 };
       const corner = { x: box.x + box.width - 60, y: box.y, width: 60, height: 40 };
@@ -207,7 +238,7 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     await page.waitForSelector('.btn[data-button="landing-gear"][aria-pressed="false"]');
     await sleep(300); // the look of a pressed button fades
     const dark = await strips(page, gear);
-    ok('the frame of a lit toggle shows on a picture', !lit[0].equals(dark[0]));
+    ok('the frame of a lit toggle shows on the tile', !lit[0].equals(dark[0]));
     ok('and so does its lamp', !lit[1].equals(dark[1]));
     await gear.tap();
     await page.waitForSelector('.btn[data-button="landing-gear"][aria-pressed="true"]');
@@ -228,7 +259,14 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     await desk.waitForSelector('#preview .btn');
     ok('the editor opens the ready-made panel', (await desk.locator('#game-name').inputValue()) === 'Star Citizen');
     layout = await tiles(desk, '#preview');
-    ok('the preview shows the same square buttons', squaresFit(layout, 60) && layout.pictures.every((side) => side === 512), JSON.stringify(layout.buttons[0]));
+    ok('the preview shows the same square buttons', squaresFit(layout, 60)
+      && layout.under.every((picture) => picture.includes('/panel-files/star-citizen/tile.jpg'))
+      && layout.signs.join() === 'sc-flight-ready,sc-atc,sc-landing-gear,sc-headlights,sc-vtol,sc-starmap',
+    JSON.stringify([layout.buttons[0], layout.signs]));
+    ok('the editor shows the tile and the colours of the signs of the game',
+      (await desk.locator('#tile-thumb.set').count()) === 1
+      && (await desk.locator('#sign-color').inputValue()) === '#e2fdfe'
+      && (await desk.locator('#sign-glow').inputValue()) === '#2aa9ad' && await desk.locator('#sign-glow-on').isChecked());
     ok('the preview shows the background', await desk.evaluate(() => getComputedStyle(document.getElementById('phone')).backgroundImage.includes('background.jpg')));
     ok('the editor shows the background and the shape', (await desk.locator('#background-thumb.set').count()) === 1
       && (await desk.locator('#shape [data-shape="square"]').getAttribute('aria-pressed')) === 'true');
@@ -237,7 +275,9 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     const unselected = await strips(desk, atc);
     await atc.click();
     await desk.waitForSelector('#preview .btn.selected[data-button="atc"]');
-    ok('the frame of the selected button shows on a picture', !unselected[0].equals((await strips(desk, atc))[0]));
+    ok('the frame of the selected button shows on the tile', !unselected[0].equals((await strips(desk, atc))[0]));
+    ok('the sign of the chosen button stands in its row',
+      (await desk.locator('#sign-thumb .sign-shape').evaluate((shape) => shape.style.getPropertyValue('--sign'))).includes('sc-atc.svg'));
 
     const saved = () => desk.waitForFunction(() => document.getElementById('save-state').textContent === 'Сохранено');
     await desk.locator('#shape [data-shape="fill"]').click();
@@ -292,7 +332,7 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     await pc.close();
   } finally {
     killServer();
-    fs.rmSync(folder, { recursive: true, force: true });
+    await removeFolder(folder);
   }
 }
 
@@ -1498,9 +1538,9 @@ main()
     console.error(error);
     failed += 1;
   })
-  .finally(() => {
+  .finally(async () => {
     killServer();
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    await removeFolder(dataDir);
     console.log(failed ? `${failed} FAILED` : 'ALL OK');
     process.exit(failed ? 1 : 0);
   });

@@ -38,6 +38,23 @@ function freePort() {
   });
 }
 
+// Takes a temporary folder away. The program was stopped a moment ago and
+// holds its files for a second yet: Windows refuses then, so the removal is
+// tried again after a pause. (The retries of fs.rmSync itself did not help:
+// in Node 24 they were over before the files were let go.) A folder that
+// stays is left in the temporary folder of the system and is no failure.
+async function removeFolder(folder) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      fs.rmSync(folder, { recursive: true, force: true });
+      return;
+    } catch {
+      await sleep(250);
+    }
+  }
+  console.warn(`could not remove ${folder}`);
+}
+
 // One language: the program with the ready-made panel alone, as a new user sees it.
 async function shoot(browser, language) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'game-remote-shots-'));
@@ -78,7 +95,20 @@ async function shoot(browser, language) {
     const { links } = await (await fetch(`${editor}/api/links`)).json();
     await page.goto(`${remote}/#pair=${links[0].url.split('#pair=')[1]}`);
     await page.waitForSelector('#status.online');
-    const loaded = () => [...document.querySelectorAll('.btn img')].every((img) => img.naturalWidth);
+    // The tile under the buttons and their signs are there before the picture is taken.
+    const loaded = async () => {
+      const shapes = [...document.querySelectorAll('.btn .sign-shape')];
+      const urls = [
+        getComputedStyle(document.querySelector('.btn')).backgroundImage,
+        ...shapes.map((shape) => shape.style.getPropertyValue('--sign')),
+      ];
+      await Promise.all(urls.map((url) => {
+        const picture = new Image();
+        picture.src = url.slice(5, -2);
+        return picture.decode();
+      }));
+      return shapes.length > 0;
+    };
     await page.waitForFunction(loaded);
     await page.waitForFunction(async () => {
       const picture = new Image();
@@ -101,7 +131,7 @@ async function shoot(browser, language) {
     await pc.close();
   } finally {
     server.kill('SIGKILL');
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    await removeFolder(dataDir);
   }
 }
 

@@ -176,11 +176,17 @@ def check(program: Program, say=print) -> None:
     sample = next(
         p for p in program.get(program.editor + "/api/panels")["panels"] if p["id"] == SAMPLE
     )
-    pictures = [button["image"] for button in sample["buttons"]] + [sample["background"]]
-    assert len(pictures) > 1 and all(pictures), sample
+    pictures = [sample["cover"], sample["background"], sample["tile"]]
+    assert all(pictures), sample
     for name in pictures:
         picture = program.get_bytes(f"{program.editor}/panel-files/{SAMPLE}/{name}")
         assert picture[:2] == b"\xff\xd8", f"{name} is not a JPEG picture"
+    # The signs of its buttons come out of the program itself, as the phone asks for them.
+    signs = [button["sign"] for button in sample["buttons"]]
+    assert len(signs) > 1 and all(signs), sample
+    for name in signs:
+        sign = program.get_text(f"{program.remote}/shared/signs/{name}.svg")
+        assert sign.startswith("<svg"), f"{name} is not a sign"
     say(f"started, version {status['version']}, the ready-made panel is there with its pictures")
 
     for path in ("/", "/app.js", "/style.css", "/shared/i18n.js"):

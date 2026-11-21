@@ -81,16 +81,20 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
         "cruise-control": False,
         "coupled": True,
     }
-    assert loaded.image_path(loaded.panel.cover).read_bytes()[:2] == b"\xff\xd8"
-    pictures = [b.image for b in loaded.panel.buttons] + [loaded.panel.background]
-    assert len(set(pictures)) == 19
+    # Three pictures for the whole panel: the buttons share one tile, and each
+    # has a sign of the set's own group in the library.
+    pictures = [loaded.panel.cover, loaded.panel.background, loaded.panel.tile]
+    assert loaded.panel.images() == set(pictures) and len(set(pictures)) == 3
     for name in pictures:
         assert loaded.image_path(name).read_bytes()[:2] == b"\xff\xd8", name
+    assert [b.sign for b in loaded.panel.buttons] == [f"sc-{b.id}" for b in loaded.panel.buttons]
+    assert not any(b.image for b in loaded.panel.buttons)
     public = loaded.public()
     assert public["shape"] == "square"
     assert public["background"].split("?")[0] == f"/panel-files/{SAMPLE_ID}/background.jpg"
-    image = public["buttons"][0]["image"]
-    assert image.split("?")[0] == f"/panel-files/{SAMPLE_ID}/flight-ready.jpg"
+    assert public["tile"].split("?")[0] == f"/panel-files/{SAMPLE_ID}/tile.jpg"
+    assert (public["sign_color"], public["sign_glow"]) == ("#e2fdfe", "#2aa9ad")
+    assert public["buttons"][0]["sign"] == "/shared/signs/sc-flight-ready.svg"
     assert sorted(p.name for p in (tmp_path / "panels").iterdir()) == [SAMPLE_ID]
 
 

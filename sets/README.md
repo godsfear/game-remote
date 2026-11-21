@@ -81,7 +81,7 @@ A set presses the keys the game has by default. If you changed them in the game,
 | --- | --- |
 | `panel.json` | The buttons, the screens and the keys. It must say the language of the labels: `"language": "en"` |
 | `panel.ru.json` and others | Translations, one file per language. Optional. The [guide](../docs/guide.en.md#translations-in-a-set) describes the format |
-| pictures | Only those the set shows: the cover, the background, the pictures of the buttons |
+| pictures | Only those the set shows: the cover, the background, the tile, the pictures of the buttons and the icons of your own |
 | `README.md` | Your notes: where the pictures come from, which version of the game the keys are for. Optional; it does not go into the file of the set |
 
 The folder holds no other files.
@@ -92,6 +92,17 @@ The folder holds no other files.
 - A set presses only the keys and shortcuts that the editor shows; it has no scripts. A macro is a list of steps that can be seen too.
 - A set with macros has to name the window of its game (`"window": "Game.exe"`) and its format (`"format": 2`). A macro works only in that window, and whoever imports the set is shown the name of the window and the number of macros. Such a set is read by version 0.8.0 and newer.
 - Bind the set to the game's window (`"window": "Game.exe"`) if you know the name of the exe: then a press never lands in another program.
+
+### A tile and icons
+
+A set does not need a picture for every button. One tile and the icons of the program give it the look of its game:
+
+- `"tile": "tile.jpg"` is the picture that lies under every button: its frame and its background. It is stretched over the button, so draw it without a sign in the middle.
+- `"sign": "power"` on a button is an icon the program ships. There are more than three hundred of them; their names show in the window of the editor where an icon is chosen and in [`index.json`](../src/game_remote/web/shared/signs/index.json).
+- `"sign_color"` and `"sign_glow"` of the panel are the colour of the icons and of the glow around them.
+- An icon of your own is a PNG or WebP with a transparent background, named in `"sign"` like a picture. Only its shape is taken.
+
+Such a set says `"format": 3`, which the editor writes by itself, and is read by version 0.11.0 and newer. The Star Citizen set is built so: one tile and eighteen icons.
 
 ### Pictures
 
