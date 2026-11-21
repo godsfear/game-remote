@@ -1,5 +1,35 @@
 # Изменения / Changelog
 
+## 0.11.0
+
+Кнопка собирается из плитки и значка: панель в стиле игры теперь делается без графического редактора.
+
+- У кнопки появился значок. В её настройках «Выбрать значок» открывает окно с тремя сотнями значков по группам: системы, транспорт, навигация, связь, бой и другие. Поиск находит значок по названию на русском и на английском. Значок рисуется поверх цвета кнопки, её картинки или плитки.
+- «Свой файл» делает значок из вашей картинки: PNG или WebP с прозрачным фоном. От неё берётся только форма, а прозрачные поля обрезаются, поэтому свой значок выходит того же размера, что и готовые. Картинку без прозрачного фона редактор не примет и скажет почему.
+- У игры появилась «Плитка кнопок» — картинка под каждой кнопкой, у которой нет своей, — а рядом цвет значков и их свечение. Одна плитка и значки дают всей панели вид игры. Плитка растягивается по кнопке любой формы. Цвет кнопки под непрозрачной плиткой не виден; редактор об этом напоминает.
+- Готовая панель Star Citizen собрана по-новому: одна плитка и восемнадцать значков вместо восемнадцати картинок. Выглядит она как прежде. Её значки стоят в окне выбора отдельной группой «Star Citizen», и их можно брать в любую панель.
+- Если панель Star Citizen у вас уже есть, программа её не трогает: она остаётся с картинками и работает как раньше. Новый вид даёт набор `star-citizen.zip` со [страницы наборов](https://github.com/godsfear/game-remote/releases/tag/panel-sets), импортированный с заменой. Прежняя панель при этом переносится в папку `trash`, а свои изменения в ней придётся внести заново.
+- Набор с плиткой или значками читает версия 0.11.0 и новее; более старая попросит обновить программу. То же относится к любому набору, экспортированному из 0.11.0.
+- Страницы программы больше не зависят от записей о типах файлов в реестре Windows. Если другая программа испортила там запись для `.js`, `.css` или `.svg`, страницы Game Remote могли не открыться.
+
+Готовые значки взяты из Material Design Icons (Pictogrammers), лицензия Apache 2.0.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+A button is put together of a tile and an icon: a panel in the look of a game now takes no graphics editor.
+
+- A button has an icon. In its settings "Choose an icon" opens a window with three hundred icons in groups: systems, vehicles, navigation, comms, combat and others. The search finds an icon by its name in Russian and in English. The icon is drawn over the colour of the button, over its picture or over the tile.
+- "Own file" makes an icon of your picture: a PNG or WebP with a transparent background. Only its shape is taken, and the transparent margins are cut away, so an icon of your own is as large as the ready ones. A picture without a transparent background is refused, with the reason.
+- A game has a "Button tile", a picture under every button that has none of its own, and next to it the colour of the icons and their glow. One tile and icons give the whole panel the look of a game. The tile is stretched over a button of any shape. The colour of a button does not show under a tile that is not transparent; the editor says so.
+- The ready-made Star Citizen panel is built anew: one tile and eighteen icons in place of eighteen pictures. It looks as it did. Its icons stand in the window in a group of their own, "Star Citizen", and any panel can use them.
+- When you have the Star Citizen panel already, the program leaves it alone: it keeps its pictures and works as before. The new look comes with the set `star-citizen.zip` from the [page of sets](https://github.com/godsfear/game-remote/releases/tag/panel-sets), imported as a replacement. The panel you had goes to the folder `trash`, and the changes you made in it have to be made again.
+- A set with a tile or icons is read by version 0.11.0 and newer; an older one asks to be updated. The same goes for any set exported from 0.11.0.
+- The pages of the program no longer depend on what the registry of Windows says about the types of files. When another program spoiled the entry for `.js`, `.css` or `.svg` there, the pages of Game Remote could fail to open.
+
+The ready icons are from Material Design Icons (Pictogrammers), under the Apache License 2.0.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.10.1
 
 Исправления к 0.10.0.
