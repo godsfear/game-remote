@@ -3,7 +3,8 @@
 
 // button: { id, label, type: 'tap' | 'hold' | 'toggle' | 'macro', on, color,
 //           image (a URL or null), sign (a URL or null),
-//           width, height (cells of the grid; one when missing) }
+//           width, height (cells of the grid; one when missing),
+//           keys_label (the keys as a person reads them, or nothing) }
 export function buttonNode(button) {
   const node = document.createElement('button');
   node.type = 'button';
@@ -34,6 +35,16 @@ export function buttonNode(button) {
     sign.append(shape);
     node.append(sign);
     node.classList.add('has-sign');
+  }
+  if (button.keys_label) {
+    // Shown only where the grid asks for it (.show-keys): a cheat sheet.
+    const keys = document.createElement('span');
+    keys.className = 'keys';
+    // Cut at the beginning when it is too long (see .keys), in its own order.
+    const text = document.createElement('bdi');
+    text.textContent = button.keys_label;
+    keys.append(text);
+    node.append(keys);
   }
   const label = document.createElement('span');
   label.className = 'label';

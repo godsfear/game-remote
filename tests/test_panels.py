@@ -168,7 +168,7 @@ def test_background_and_shape_are_checked():
             Panel.model_validate(MINIMAL | bad)
 
 
-def test_phone_never_receives_key_combos(tmp_path):
+def test_the_phone_is_told_the_keys_in_words_and_never_their_codes(tmp_path):
     write_panel(tmp_path, "x4", MINIMAL)
     store = PanelStore(tmp_path)
     store.load()
@@ -186,8 +186,10 @@ def test_phone_never_receives_key_combos(tmp_path):
             "screen": 0,
             "width": 1,
             "height": 1,
+            "keys_label": "M",
         }
     ]
+    # The phone is told how a person reads the keys, never their codes.
     assert "KeyM" not in json.dumps(public)
 
 

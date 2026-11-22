@@ -355,7 +355,9 @@ class LoadedPanel:
         return {"id": self.id, **self.panel.model_dump()}
 
     def public(self) -> dict:
-        """What the phone needs to draw the panel. Key combos stay on the PC."""
+        """What the phone needs to draw the panel. The codes of the keys stay
+        on the PC: the phone is told only how a person reads them, to write
+        them onto the buttons when its owner asks for that."""
         return {
             "id": self.id,
             "name": self.panel.name,
@@ -379,6 +381,7 @@ class LoadedPanel:
                     "screen": b.screen,
                     "width": b.width,
                     "height": b.height,
+                    "keys_label": b.keys_label(),
                 }
                 for b in self.panel.buttons
             ],

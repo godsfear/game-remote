@@ -357,6 +357,51 @@ async function firstRun(browser, ports, phoneOptions, watch) {
     await page.locator('#menu-stretch').tap();
     await page.locator('#menu-close').tap();
     ok('switched off, the buttons are square again', squaresFit(await tiles(page, '#grid'), 180));
+
+    // A phone can write onto every button the keys it presses: a cheat sheet.
+    const keys = () => page.locator('#grid .btn').evaluateAll((buttons) => buttons.map((button) => {
+      const node = button.querySelector('.keys');
+      const [inner, outer] = [node.getBoundingClientRect(), button.getBoundingClientRect()];
+      // What the mark of the button takes of its other corner.
+      const mark = { hold: 21, toggle: 28, macro: 18 }[button.className.split(' ')[1]] || 5;
+      return {
+        text: node.textContent,
+        shown: getComputedStyle(node).display !== 'none',
+        // Inside the button, and clear of the mark in its other corner.
+        fits: inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right - mark,
+        whole: node.scrollWidth <= node.clientWidth,
+      };
+    }));
+    ok('the phone is told the keys of the buttons, as a person reads them',
+      (await keys()).slice(0, 3).map((button) => button.text).join('|') === 'Right Alt+R|Alt+N|N', JSON.stringify(await keys()));
+    ok('and does not show them until it is asked to', (await keys()).every((button) => !button.shown));
+    await page.locator('#menu-open').tap();
+    ok('the switch of the keys is off at first', (await page.locator('#menu-keys').getAttribute('aria-pressed')) === 'false');
+    await page.locator('#menu-keys').tap();
+    ok('and shows that it is on', (await page.locator('#menu-keys').getAttribute('aria-pressed')) === 'true');
+    await page.locator('#menu-close').tap();
+    ok('the phone writes the keys into the corner of every button, whole',
+      (await keys()).every((button) => button.shown && button.fits && button.whole), JSON.stringify(await keys()));
+    await shot(page, 'phone-keys');
+    // Keys that are longer than their room lose their beginning: the last key says most.
+    const cut = await page.locator('#grid .btn .keys').first().evaluate((node) => {
+      node.style.maxWidth = '34px';
+      const [frame, text] = [node.getBoundingClientRect(), node.firstElementChild.getBoundingClientRect()];
+      node.style.maxWidth = '';
+      return { start: text.left < frame.left - 1, end: text.right <= frame.right + 1, width: frame.width };
+    });
+    ok('keys too long for their room are cut at the beginning, not at the end',
+      cut.start && cut.end && cut.width <= 34, JSON.stringify(cut));
+    ok('the preview of the editor stays without them', (await desk.locator('#preview .keys').count()) === 0);
+    await page.reload();
+    await page.waitForSelector('#status.online');
+    ok('the phone remembers that it shows the keys', await until(async () => (
+      (await page.locator('#grid .btn').count()) > 0 && (await keys()).every((button) => button.shown)
+    )));
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-keys').tap();
+    await page.locator('#menu-close').tap();
+    ok('switched off, the keys are gone again', (await keys()).every((button) => !button.shown));
     await phone.close();
     await pc.close();
   } finally {

@@ -9,6 +9,7 @@ const PANEL_STORE = 'gameRemote.panel';
 const SCREEN_STORE = 'gameRemote.screen.'; // + panel id: the screen last shown
 const VIBRATE_STORE = 'gameRemote.vibrate';
 const STRETCH_STORE = 'gameRemote.stretch';
+const KEYS_STORE = 'gameRemote.keys';
 const NOTICE_AFTER_MS = 4000; // a short hiccup needs no explanation
 const PING_EVERY_MS = 1000;
 const PONG_TIMEOUT_MS = 3000;
@@ -36,6 +37,7 @@ const el = {
   menuClose: document.getElementById('menu-close'),
   fullscreen: document.getElementById('menu-fullscreen'),
   stretch: document.getElementById('menu-stretch'),
+  keys: document.getElementById('menu-keys'),
   vibration: document.getElementById('menu-vibration'),
   delay: document.getElementById('menu-delay'),
 };
@@ -67,6 +69,9 @@ let vibration = store.get(VIBRATE_STORE) !== 'off';
 // This phone stretches the buttons over its screen, also where the game has
 // them square. Off: every game looks the way it was made.
 let stretch = store.get(STRETCH_STORE) === 'on';
+// This phone writes onto every button the keys it presses.
+let showKeys = store.get(KEYS_STORE) === 'on';
+el.grid.classList.toggle('show-keys', showKeys);
 let toastTimer = 0;
 // button id -> { pointerId, node, timer, flipped } for every button a finger is
 // on right now; the last two belong to a toggle
@@ -508,6 +513,7 @@ function renderMenu() {
   el.fullscreen.parentElement.hidden = !(root.requestFullscreen || root.webkitRequestFullscreen);
   el.fullscreen.setAttribute('aria-pressed', String(Boolean(fullscreenElement())));
   el.stretch.setAttribute('aria-pressed', String(stretch));
+  el.keys.setAttribute('aria-pressed', String(showKeys));
   el.vibration.parentElement.hidden = !navigator.vibrate;
   el.vibration.setAttribute('aria-pressed', String(vibration));
   el.delay.hidden = !online || delayMs === null;
@@ -535,6 +541,12 @@ el.stretch.addEventListener('click', () => {
   store.set(STRETCH_STORE, stretch ? 'on' : 'off');
   renderMenu();
   layout(); // only the shape of the grid changes; the buttons stay
+});
+el.keys.addEventListener('click', () => {
+  showKeys = !showKeys;
+  store.set(KEYS_STORE, showKeys ? 'on' : 'off');
+  renderMenu();
+  el.grid.classList.toggle('show-keys', showKeys);
 });
 el.vibration.addEventListener('click', () => {
   vibration = !vibration;

@@ -109,6 +109,28 @@
   font-size: 0.72em;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
 }
+/* The keys a button presses, in its corner: only where the grid asks for
+   them. They take the room up to the other corner, less what the mark of
+   the button takes there (--mark). Keys that do not fit are cut at their
+   beginning, for the last key says most: the line runs from right to left,
+   and the keys inside it (bdi) keep their own order. Where nothing fits,
+   nothing is drawn: the frame has no padding of its own. */
+.btn .keys {
+  display: none;
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  max-width: calc(100% - 6px - var(--mark, 6px));
+  border-radius: 6px;
+  font-size: 0.55em; font-weight: 600; line-height: 1.4;
+  color: #fff; background: rgba(0, 0, 0, 0.6);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  direction: rtl;
+  pointer-events: none;
+}
+.btn .keys bdi { padding: 1px 5px; }
+.btn.hold .keys { --mark: 25px; }
+.btn.toggle .keys { --mark: 32px; }
+.btn.macro .keys { --mark: 22px; }
+.panel-grid.show-keys .btn .keys { display: block; }
 /* Marks and frames lie above the picture of a button, which would cover them. */
 .btn.hold::before {
   content: "";
