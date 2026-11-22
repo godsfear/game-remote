@@ -258,8 +258,9 @@ class Panel(BaseModel):
     # Picture under every button that has none of its own; a file in the panel
     # folder. Without it such a button shows its colour.
     tile: str | None = Field(default=None, pattern=IMAGE_PATTERN)
-    # The colour the signs of the buttons are drawn in, and of the glow around
-    # them. Without the first they are white, without the second they do not glow.
+    # The colour the signs of the buttons are drawn in, and the colour a sign
+    # glows in while its button is pressed, its toggle is on or its macro runs.
+    # Without the first the signs are white, without the second they never glow.
     sign_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     sign_glow: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     # fill: the buttons share the whole screen. square: they stay square and

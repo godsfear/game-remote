@@ -8,7 +8,7 @@
   "background": "background.jpg",
   "tile": "tile.jpg",
   "sign_color": "#e2fdfe",
-  "sign_glow": "#2aa9ad",
+  "sign_glow": "#46d7ff",
   "screens": ["Takeoff/Landing", "Flight", "Emotes"],
   "buttons": [
     { "id": "flight-ready", "label": "Flight Ready", "keys": "AltRight+KeyR", "sign": "sc-flight-ready" },

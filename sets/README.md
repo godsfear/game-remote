@@ -99,7 +99,7 @@ A set does not need a picture for every button. One tile and the icons of the pr
 
 - `"tile": "tile.jpg"` is the picture that lies under every button: its frame and its background. It is stretched over the button, so draw it without a sign in the middle.
 - `"sign": "power"` on a button is an icon the program ships. There are more than three hundred of them; their names show in the window of the editor where an icon is chosen and in [`index.json`](../src/game_remote/web/shared/signs/index.json).
-- `"sign_color"` and `"sign_glow"` of the panel are the colour of the icons and of the glow around them.
+- `"sign_color"` of the panel is the colour of the icons, and `"sign_glow"` the colour an icon glows in while its button is pressed, its toggle is on or its macro runs. At rest an icon does not glow.
 - An icon of your own is a PNG or WebP with a transparent background, named in `"sign"` like a picture. Only its shape is taken.
 
 Such a set says `"format": 3`, which the editor writes by itself, and is read by version 0.11.0 and newer. The Star Citizen set is built so: one tile and eighteen icons.

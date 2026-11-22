@@ -70,6 +70,22 @@ function killServer() {
   server = null;
 }
 
+// What a button and its sign look like while a finger is on the button: the
+// filters the page gives to the two. The class is what a touch gives; the look
+// changes smoothly, so it is read when the change is over, and the button is
+// let go and comes to rest before anything else looks at it.
+async function pressedLook(button) {
+  await button.evaluate((node) => node.classList.add('down'));
+  await sleep(200);
+  const look = await button.evaluate((node) => ({
+    button: getComputedStyle(node).filter,
+    sign: node.querySelector('.sign') ? getComputedStyle(node.querySelector('.sign')).filter : '',
+  }));
+  await button.evaluate((node) => node.classList.remove('down'));
+  await sleep(200);
+  return look;
+}
+
 // Takes a temporary folder away. The program was stopped a moment ago and
 // holds its files for a second yet: Windows refuses then, so the removal is
 // tried again after a pause. (The retries of fs.rmSync itself did not help:
@@ -195,6 +211,16 @@ async function firstRun(browser, ports, phoneOptions, watch) {
         && signs.join() === 'sc-flight-ready,sc-atc,sc-landing-gear,sc-headlights,sc-vtol,sc-starmap';
     }));
     ok('and no picture of its own', (await page.locator('#grid .btn img').count()) === 0);
+    // A sign glows while its button does something, and only then.
+    const glow = (view, grid, id) => view.locator(`${grid} .btn[data-button="${id}"] .sign`).evaluate(
+      (sign) => [getComputedStyle(sign).filter, getComputedStyle(sign.parentElement).filter],
+    );
+    ok('a sign at rest does not glow', (await glow(page, '#grid', 'flight-ready'))[0] === 'none');
+    ok('the sign of a toggle that is on glows', (await glow(page, '#grid', 'landing-gear'))[0].includes('drop-shadow'));
+    ok('and of one that is off does not', (await glow(page, '#grid', 'headlights'))[0] === 'none');
+    const pressed = await pressedLook(page.locator('.btn[data-button="flight-ready"]'));
+    ok('a sign glows in the colour of the game while a finger is on its button, and the button is not bleached for it',
+      pressed.sign.includes('drop-shadow(rgb(70, 215, 255)') && pressed.button === 'none', JSON.stringify(pressed));
     const background = () => page.evaluate(async () => {
       const url = getComputedStyle(document.body).backgroundImage.slice(5, -2);
       const picture = new Image();
@@ -263,10 +289,13 @@ async function firstRun(browser, ports, phoneOptions, watch) {
       && layout.under.every((picture) => picture.includes('/panel-files/star-citizen/tile.jpg'))
       && layout.signs.join() === 'sc-flight-ready,sc-atc,sc-landing-gear,sc-headlights,sc-vtol,sc-starmap',
     JSON.stringify([layout.buttons[0], layout.signs]));
+    ok('the preview lights the sign of the toggle that is on, and no other',
+      (await glow(desk, '#preview', 'landing-gear'))[0].includes('drop-shadow')
+      && (await glow(desk, '#preview', 'flight-ready'))[0] === 'none');
     ok('the editor shows the tile and the colours of the signs of the game',
       (await desk.locator('#tile-thumb.set').count()) === 1
       && (await desk.locator('#sign-color').inputValue()) === '#e2fdfe'
-      && (await desk.locator('#sign-glow').inputValue()) === '#2aa9ad' && await desk.locator('#sign-glow-on').isChecked());
+      && (await desk.locator('#sign-glow').inputValue()) === '#46d7ff' && await desk.locator('#sign-glow-on').isChecked());
     ok('the preview shows the background', await desk.evaluate(() => getComputedStyle(document.getElementById('phone')).backgroundImage.includes('background.jpg')));
     ok('the editor shows the background and the shape', (await desk.locator('#background-thumb.set').count()) === 1
       && (await desk.locator('#shape [data-shape="square"]').getAttribute('aria-pressed')) === 'true');
@@ -385,6 +414,8 @@ async function main() {
   ok('interface follows the browser language', (await page.locator('#status-text').textContent()) === 'На связи');
   ok('demo panel follows the system language', (await page.locator('#panel-name').textContent()) === 'Демо');
   ok('PC counts the phone', (await status()).phones === 1);
+  const plainLook = await pressedLook(page.locator('#grid .btn').first());
+  ok('a plain button grows brighter under a finger', plainLook.button === 'brightness(1.35)', JSON.stringify(plainLook));
   await shot(page, 'phone-portrait');
 
   // Real multi-touch through the DevTools protocol. touchStart adds fingers,
@@ -987,7 +1018,7 @@ async function main() {
     return game.sign_color === '#dcfaff' && game.sign_glow === '#46d7ff';
   }));
   ok('the colour of the glow has a name for who cannot see it',
-    (await desk.locator('#sign-glow').getAttribute('aria-label')) === 'Свечение');
+    (await desk.locator('#sign-glow').getAttribute('aria-label')) === 'Свечение при нажатии');
   // Another game does not inherit the glow of the one that was shown before it.
   await setColor('#sign-glow', '#ff0000');
   await until(async () => (await stored('game')).sign_glow === '#ff0000');
@@ -999,6 +1030,12 @@ async function main() {
   ok('and the game shows its own again', (await desk.locator('#sign-glow').inputValue()) === '#ff0000');
   await setColor('#sign-glow', '#46d7ff');
   await until(async () => (await stored('game')).sign_glow === '#46d7ff');
+  // The game has a glow now, and its buttons no signs yet: such a button has
+  // nothing to glow with, so it still answers a finger by growing brighter.
+  await until(() => page.locator('#grid.glow').count());
+  const signlessLook = await pressedLook(page.locator('#grid .btn').first());
+  ok('a button without a sign grows brighter under a finger also in a game with a glow',
+    signlessLook.button === 'brightness(1.35)', JSON.stringify(signlessLook));
 
   // The first button gets a sign of the library: found by a word, in either language.
   await desk.locator('#button-list li').first().click();
@@ -1095,9 +1132,9 @@ async function main() {
     await until(async () => (await drawn(view, grid)).filter((button) => button.sign).length === 2);
     const buttons = await drawn(view, grid);
     const [library, own] = [buttons[0], buttons.find((button) => button.picture)];
-    ok(`${name} draws a sign of the library in the colour of the panel, with its glow`,
+    ok(`${name} draws a sign of the library in the colour of the panel, without a glow while it rests`,
       library.sign.includes('/shared/signs/power.svg') && library.color === 'rgb(220, 250, 255)'
-      && library.glow.includes('drop-shadow') && library.above, JSON.stringify(library));
+      && library.glow === 'none' && library.above, JSON.stringify(library));
     ok(`${name} lays the whole tile under the button that has no picture`,
       library.tile && library.whole && !own.tile, JSON.stringify([library, own]));
     ok(`${name} paints the sign: a shape, not a square and not nothing`, await painted(view, grid));

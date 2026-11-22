@@ -70,7 +70,7 @@
 }
 /* The sign of a button, above its name: about half of the button, as the
    pictures of the ready-made set have it. */
-.btn .sign { position: absolute; inset: 11% 14% 27%; pointer-events: none; }
+.btn .sign { position: absolute; inset: 11% 14% 27%; pointer-events: none; transition: filter 80ms; }
 /* The shape of a sign, wherever it is shown: of the picture --sign only the
    outline is taken, and it is filled with the colour a panel names, or else
    with the colour of the text around it. */
@@ -80,8 +80,18 @@
   -webkit-mask: var(--sign) center / contain no-repeat;
   mask: var(--sign) center / contain no-repeat;
 }
-/* The glow grows with the letters of the button, which grow with the panel. */
-.panel-grid.glow .btn .sign { filter: drop-shadow(0 0 0.25em var(--sign-glow)); }
+/* A sign lights up while its button does something: a finger is on it, what
+   it switches is on, or its macro runs. At rest it does not glow, so the glow
+   tells which button it is. It grows with the letters of the button, which
+   grow with the panel; two layers, a close one and a wide one, make it show
+   on a phone held at arm's length. */
+.panel-grid.glow .btn.down .sign,
+.panel-grid.glow .btn[aria-pressed="true"] .sign {
+  filter: drop-shadow(0 0 0.15em var(--sign-glow)) drop-shadow(0 0 0.45em var(--sign-glow));
+}
+/* Such a button is not made brighter as a whole when it is pressed: its sign
+   would burn out to white, and the glow around it would be lost. */
+.panel-grid.glow .btn.has-sign.down { filter: none; }
 /* A button without a name gives its whole face to the sign. */
 .btn:has(.label:empty) .sign { inset: 14%; }
 .btn.has-image .label,

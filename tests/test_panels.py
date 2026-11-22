@@ -93,7 +93,7 @@ def test_first_start_installs_the_ready_made_panel_with_its_pictures(tmp_path):
     assert public["shape"] == "square"
     assert public["background"].split("?")[0] == f"/panel-files/{SAMPLE_ID}/background.jpg"
     assert public["tile"].split("?")[0] == f"/panel-files/{SAMPLE_ID}/tile.jpg"
-    assert (public["sign_color"], public["sign_glow"]) == ("#e2fdfe", "#2aa9ad")
+    assert (public["sign_color"], public["sign_glow"]) == ("#e2fdfe", "#46d7ff")
     assert public["buttons"][0]["sign"] == "/shared/signs/sc-flight-ready.svg"
     assert sorted(p.name for p in (tmp_path / "panels").iterdir()) == [SAMPLE_ID]
 
