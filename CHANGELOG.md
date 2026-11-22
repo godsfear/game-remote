@@ -1,5 +1,27 @@
 # Изменения / Changelog
 
+## 0.12.1
+
+Телефон может писать на кнопках клавиши, которые они нажимают.
+
+- В настройках телефона (кнопка «⋮») появился пункт «Клавиши на кнопках». Он пишет в углу каждой кнопки её клавиши, например «Alt+N»: панель заодно становится шпаргалкой по раскладке игры. Пункт выключен, пока вы его не включите, и телефон помнит выбор.
+- Подпись стоит в левом верхнем углу, правый остаётся метке кнопки. Если клавиши не помещаются, обрезается их начало: последняя клавиша видна всегда.
+- Для этого ПК сообщает подключённым телефонам названия клавиш каждой кнопки. Раньше телефон о клавишах не знал ничего. Коды клавиш по-прежнему остаются на ПК, и нажать телефон может только кнопку панели.
+
+Файл панели не изменился: наборы, сделанные в 0.12.0, читаются как прежде.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+A phone can write onto the buttons the keys they press.
+
+- The settings of a phone (the "⋮" button) have a new item, "Keys on the buttons". It writes into the corner of every button its keys, for example "Alt+N": the panel becomes a cheat sheet for the bindings of the game as well. The item is off until you turn it on, and the phone remembers the choice.
+- The keys stand in the top left corner; the right one stays with the mark of the button. Keys that do not fit lose their beginning: the last key always shows.
+- For this the PC tells the paired phones the names of the keys of every button. Before, a phone knew nothing about the keys. The codes of the keys stay on the PC as before, and a phone can press nothing but a button of a panel.
+
+The file of a panel did not change: sets made in 0.12.0 are read as before.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.12.0
 
 Кнопки могут быть разного размера.
