@@ -1,5 +1,29 @@
 # Изменения / Changelog
 
+## 0.12.0
+
+Кнопки могут быть разного размера.
+
+- У кнопки появился «Размер»: ширина и высота в клетках сетки, от одной до четырёх. Главное действие можно сделать широкой полосой или большой кнопкой в четыре клетки.
+- Кнопки поменьше сами занимают места рядом с большой, чтобы на панели не оставалось дыр там, где без них можно обойтись. Поэтому на телефоне кнопки могут стоять не в том порядке, что в списке; превью в редакторе показывает, как получится.
+- Кнопка шире, чем у панели колонок, рисуется во всю ширину панели. Когда телефон повёрнут набок, колонок вдвое больше, а размер кнопки в клетках остаётся тем же.
+- Плитка игры растягивается на всю большую кнопку, значок остаётся в её середине. У квадратных кнопок большая кнопка занимает ровно свои клетки вместе с промежутками между ними.
+
+У файла панели новый формат, четвёртый. Панели и наборы прежних версий читаются как раньше. Набор, экспортированный из 0.12.0, откроет только 0.12.0 и новее: более старая версия попросит обновить программу. Готовый набор Star Citizen не изменился и по-прежнему открывается в 0.11.0.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+Buttons can be of different sizes.
+
+- A button has a "Size" now: its width and its height in cells of the grid, from one to four. The main action can be a wide bar or a large button of four cells.
+- Smaller buttons take the places next to a large one by themselves, so that a panel has no holes where it can do without them. That is why the buttons may stand on the phone in another order than in the list; the preview in the editor shows what comes of it.
+- A button wider than the panel has columns is drawn as wide as the panel. On a phone on its side there are twice the columns, and the size of a button in cells stays the same.
+- The tile of the game is stretched over the whole of a large button, and the icon stays in its middle. Where the buttons are square, a large one takes exactly its cells and the gaps between them.
+
+The file of a panel has a new format, the fourth. Panels and sets of earlier versions are read as before. A set exported from 0.12.0 is read by 0.12.0 and newer only: an older version asks to be updated. The ready-made Star Citizen set did not change and is still read by 0.11.0.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.11.1
 
 Свечение значка теперь показывает, что кнопка делает, а не украшает все кнопки сразу.
