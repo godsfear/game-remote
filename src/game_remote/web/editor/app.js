@@ -10,6 +10,7 @@ const PANEL_STORE = 'gameRemote.editor.panel';
 const IMAGE_MAX_SIDE = 512; // pictures are shrunk to this before upload
 const BACKGROUND_MAX_SIDE = 1920; // a background fills the whole phone screen
 const MAX_SCREENS = 8; // the PC accepts no more
+const MAX_SPAN = 4; // cells a button takes across or down, like on the PC
 const GLOW = '#46d7ff'; // the glow a game gets when it is switched on
 const COLORS = ['#2b5fd9', '#7a4fd1', '#2f9e62', '#1f8a8a', '#c9822b', '#c44f6a', '#8a8f9c'];
 
@@ -33,6 +34,7 @@ const el = Object.fromEntries([
   'autostart', 'autostart-field', 'tile-thumb', 'tile-choose', 'tile-remove', 'sign-color',
   'sign-glow', 'sign-glow-on', 'sign-thumb', 'sign-choose', 'sign-own', 'sign-remove',
   'sign-dialog', 'sign-search', 'sign-groups', 'sign-none', 'sign-cancel', 'color-hint',
+  'button-size',
 ].map((id) => [id, document.getElementById(id)]));
 
 const store = {
@@ -201,6 +203,8 @@ function forFile(panel) {
       image: button.image || null,
       sign: button.sign || null,
       screen: button.screen || 0,
+      width: button.width || 1,
+      height: button.height || 1,
     })),
   };
 }
@@ -679,6 +683,10 @@ function fillButtonForm() {
     return option;
   }));
   el['button-screen'].value = String(button.screen || 0);
+  for (const choice of el['button-size'].querySelectorAll('button')) {
+    const cells = button[choice.parentElement.dataset.side] || 1;
+    choice.setAttribute('aria-pressed', String(Number(choice.textContent) === cells));
+  }
 }
 
 // The steps of a macro. A click on a step shows its keys in the field below,
@@ -1314,6 +1322,21 @@ el['button-screen'].addEventListener('change', () => {
   renderAll();
   if (ready(button)) changed();
 });
+// The cells a button takes, across and down: from one to MAX_SPAN of each.
+for (const side of el['button-size'].querySelectorAll('.segmented')) {
+  for (let cells = 1; cells <= MAX_SPAN; cells += 1) {
+    const choice = node('button', '', String(cells));
+    choice.type = 'button';
+    choice.addEventListener('click', () => {
+      const button = selectedButton();
+      button[side.dataset.side] = cells;
+      fillButtonForm();
+      renderPreview();
+      if (ready(button)) changed();
+    });
+    side.append(choice);
+  }
+}
 el['button-label'].addEventListener('input', () => {
   const button = selectedButton();
   button.label = el['button-label'].value;

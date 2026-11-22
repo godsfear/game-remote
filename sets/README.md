@@ -102,7 +102,11 @@ A set does not need a picture for every button. One tile and the icons of the pr
 - `"sign_color"` of the panel is the colour of the icons, and `"sign_glow"` the colour an icon glows in while its button is pressed, its toggle is on or its macro runs. At rest an icon does not glow.
 - An icon of your own is a PNG or WebP with a transparent background, named in `"sign"` like a picture. Only its shape is taken.
 
-Such a set says `"format": 3`, which the editor writes by itself, and is read by version 0.11.0 and newer. The Star Citizen set is built so: one tile and eighteen icons.
+Such a set says `"format": 3` and is read by version 0.11.0 and newer. The Star Citizen set is built so: one tile and eighteen icons.
+
+A button may take more than one cell of the grid: `"width": 2` or `"height": 2` on a button, from 1 to 4. A set with such a button says `"format": 4` and is read by version 0.12.0 and newer.
+
+The editor writes `"format"` by itself, and always the number of its own version, whatever the set holds: a set exported from version 0.12.0 says `"format": 4` and is read by 0.12.0 and newer. The page of sets says which version a set needs.
 
 ### Pictures
 

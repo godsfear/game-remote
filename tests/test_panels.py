@@ -184,6 +184,8 @@ def test_phone_never_receives_key_combos(tmp_path):
             "image": None,
             "sign": None,
             "screen": 0,
+            "width": 1,
+            "height": 1,
         }
     ]
     assert "KeyM" not in json.dumps(public)
@@ -258,7 +260,9 @@ def test_keys_are_normalised_modifiers_first():
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "color": "red"}]},
         {"name": "x", "buttons": [], "columns": 0},
         {"name": "x", "buttons": [], "macro": "anything"},
-        {"name": "x", "buttons": [], "format": 4},
+        {"name": "x", "buttons": [], "format": 5},
+        {"name": "x", "format": 4, "buttons": [{"id": "a", "keys": "KeyA", "width": 0}]},
+        {"name": "x", "format": 4, "buttons": [{"id": "a", "keys": "KeyA", "height": 5}]},
         # A sign: of the library or a picture with a clear background, and nothing else.
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "no-such-sign"}]},
         {"name": "x", "buttons": [{"id": "a", "keys": "KeyA", "sign": "gear.jpg"}]},
@@ -595,7 +599,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
     After that write the new picture of the files here. (Toggles came in 0.6.0 without it, and 0.5.0
     answers them with "buttons.0.type: Input should be".)"""
     image = r"pattern=^[A-Za-z0-9_-][A-Za-z0-9_. -]{0,80}\.(png|jpg|jpeg|webp)$"
-    assert FORMAT == 3
+    assert FORMAT == 4
     # The signs that ship with the program are a part of the format: a set
     # names them, and the program before a new sign does not have it.
     signs = "\n".join(sorted(sign_names()))
@@ -603,6 +607,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
     assert picture(Panel) == {
         "Button": "",
         "Button.color": "pattern=^#[0-9a-fA-F]{6}$",
+        "Button.height": "maximum=4 minimum=1",
         "Button.id": "pattern=^[A-Za-z0-9_-]{1,40}$",
         "Button.image": image,
         "Button.keys": "",
@@ -612,6 +617,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "Button.sign": "",
         "Button.steps": "maxItems=20",
         "Button.type": "enum=['tap', 'hold', 'toggle', 'macro']",
+        "Button.width": "maximum=4 minimum=1",
         "Step": "",
         "Step.hold": "maximum=5000 minimum=1",
         "Step.keys": "",
@@ -620,7 +626,7 @@ def test_a_change_of_the_file_is_not_made_without_a_thought_about_its_format():
         "buttons": "maxItems=200",
         "columns": "maximum=8 minimum=1",
         "cover": image,
-        "format": "enum=[1, 2, 3]",
+        "format": "enum=[1, 2, 3, 4]",
         "language": "pattern=^[a-z]{2}$",
         "name": "maxLength=60 minLength=1",
         "screens": "maxItems=8 maxLength=24 minLength=1",
@@ -718,6 +724,30 @@ def test_a_file_with_a_sign_or_a_tile_says_its_format(tmp_path, new):
         with pytest.raises(ValueError, match='signs or a tile says "format": 3'):
             read_set(write_set(tmp_path / "old", MINIMAL | new | silent))
     assert read_set(write_set(tmp_path / "new", MINIMAL | new | {"format": 3}))
+
+
+def test_a_button_takes_more_than_one_cell(tmp_path):
+    wide = {"id": "fire", "keys": "Space", "width": 3}
+    tall = {"id": "boost", "keys": "ShiftLeft", "height": 2}
+    panel = Panel.model_validate(MINIMAL | {"buttons": [wide, tall, {"id": "map", "keys": "KeyM"}]})
+    assert panel.needs_format() == 4
+    # The file says the size of a button only where it is not one cell.
+    written = json.loads(panel_text(panel))
+    assert written["buttons"] == [wide, tall, {"id": "map", "keys": "KeyM"}]
+    write_panel(tmp_path, "x4", written)
+    store = PanelStore(tmp_path)
+    store.load()
+    shown = store.panels["x4"].public()["buttons"]
+    assert [(b["width"], b["height"]) for b in shown] == [(3, 1), (1, 2), (1, 1)]
+
+    # The program before such buttons takes a file that says an older number
+    # for one it can read: a file written by hand has to say what it is.
+    for size in ({"width": 2}, {"height": 2}):
+        large = MINIMAL | {"buttons": [{"id": "a", "keys": "KeyA"} | size]}
+        for silent in ({}, {"format": 3}):
+            with pytest.raises(ValueError, match='more than one cell says "format": 4'):
+                read_set(write_set(tmp_path / "old", large | silent))
+        assert read_set(write_set(tmp_path / "new", large | {"format": 4}))
 
 
 def test_a_set_that_cannot_be_moved_in_leaves_no_draft(tmp_path, monkeypatch):

@@ -87,9 +87,11 @@ def needs(panel: Panel) -> str | None:
     understands, so the page of sets says it."""
     # The program writes the number of its format into every set it exports,
     # whatever the set holds: format 2, the one with macros, came with 0.8.0,
-    # format 3, the one with signs and a tile, with 0.11.0. Toggle buttons came
+    # format 3, the one with signs and a tile, with 0.11.0, format 4, the one
+    # with buttons of more than one cell, with 0.12.0. Toggle buttons came
     # with 0.6.0.
-    version = {2: "0.8.0", 3: "0.11.0"}.get(max(panel.format, panel.needs_format()))
+    formats = {2: "0.8.0", 3: "0.11.0", 4: "0.12.0"}
+    version = formats.get(max(panel.format, panel.needs_format()))
     toggles = any(button.type == "toggle" for button in panel.buttons)
     return version or ("0.6.0" if toggles else None)
 

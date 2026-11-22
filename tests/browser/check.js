@@ -1163,6 +1163,78 @@ async function main() {
     && (await drawn(desk, '#preview')).every((button) => !button.sign && !button.tile)
   )));
 
+  // ---- a button of more than one cell ----------------------------------------
+  // The game has two columns and two buttons. The first one is made two cells
+  // wide and two high: it takes two rows whole, and the other stands under it.
+  const cells = (side, count) => desk.locator(`#button-size [data-side="${side}"] button`).nth(count - 1);
+  const pressed = async (choice) => (await choice.getAttribute('aria-pressed')) === 'true';
+  // Twice the small button and the gap between two cells, across and down.
+  const large = async (view, grid, square) => {
+    const { grid: area, buttons: [big, small] } = await tiles(view, grid);
+    const near = (a, b) => Math.abs(a - b) < 1.5;
+    const gap = await view.locator(grid).evaluate((node) => parseFloat(getComputedStyle(node).columnGap));
+    return near(big.width, small.width * 2 + gap) && near(big.height, small.height * 2 + gap)
+      && small.top >= big.bottom + gap - 1.5
+      && small.bottom <= area.bottom + 1 && big.right <= area.right + 1
+      && (!square || (near(small.width, small.height) && near(big.width, big.height)));
+  };
+  await desk.locator('#button-list li').first().click();
+  ok('a button takes one cell until it is told otherwise',
+    await pressed(cells('width', 1)) && await pressed(cells('height', 1)));
+  ok('the choices of the size are named by what they set',
+    (await desk.getByRole('group', { name: 'Ширина' }).getByRole('button').count()) === 4
+    && (await desk.getByRole('group', { name: 'Высота' }).getByRole('button').count()) === 4);
+  await cells('width', 2).click();
+  await cells('height', 2).click();
+  ok('the editor shows the size it was given', await pressed(cells('width', 2)) && await pressed(cells('height', 2))
+    && !(await pressed(cells('width', 1))));
+  ok('the size of a button is saved into the panel', await until(() => {
+    const [first, second] = fileOfGame().buttons;
+    return first.width === 2 && first.height === 2 && !('width' in second) && !('height' in second);
+  }));
+  ok('and the file says the format that has such buttons', fileOfGame().format === 4);
+  for (const [name, view, grid] of [['the phone', page, '#grid'], ['the preview', desk, '#preview']]) {
+    ok(`${name} draws the button over two cells across and two down`, await until(() => large(view, grid)));
+  }
+  await shot(page, 'phone-large-button');
+  await desk.locator('#shape [data-shape="square"]').click();
+  for (const [name, view, grid] of [['the phone', page, '#grid'], ['the preview', desk, '#preview']]) {
+    ok(`${name} keeps it a square of four cells where the buttons are square`,
+      await until(async () => (await view.locator(`${grid}.square`).count()) === 1 && large(view, grid, true)));
+  }
+  await desk.locator('#shape [data-shape="fill"]').click();
+  await until(() => page.locator('#grid:not(.square)').count());
+  // A button wider than the panel has columns is as wide as the panel. The
+  // phone draws the panel anew when it changes: the mark tells that it did.
+  await page.locator('#grid .btn').first().evaluate((button) => { button.dataset.before = 'yes'; });
+  await cells('width', 4).click();
+  ok('a width of more cells than the panel has columns is saved as it is',
+    await until(() => fileOfGame().buttons[0].width === 4));
+  ok('the phone draws such a button as wide as the panel', await until(async () => (
+    (await page.locator('#grid [data-before]').count()) === 0 && large(page, '#grid')
+  )));
+  ok('and so does the preview', await large(desk, '#preview'));
+  // On its side the panel has twice the columns, four, and the button all of
+  // them, also where the buttons are square: the other one is a cell under it.
+  await cells('height', 1).click();
+  await desk.locator('#shape [data-shape="square"]').click();
+  await desk.click('#rotate');
+  const { buttons: [bar, cell] } = await tiles(desk, '#preview');
+  const between = await desk.locator('#preview').evaluate((node) => parseFloat(getComputedStyle(node).columnGap));
+  ok('on its side a square panel keeps the button four cells wide',
+    Math.abs(bar.width - (cell.width * 4 + between * 3)) < 1.5 && Math.abs(bar.height - cell.height) < 1.5
+    && Math.abs(cell.width - cell.height) < 1.5 && cell.top > bar.bottom, JSON.stringify([bar, cell]));
+  await desk.click('#rotate');
+  await desk.locator('#shape [data-shape="fill"]').click();
+  await cells('width', 1).click();
+  ok('a button that is one cell again is saved without a size', await until(() => (
+    fileOfGame().buttons.every((button) => !('width' in button) && !('height' in button))
+  )));
+  ok('and stands next to the other one again', await until(async () => {
+    const { buttons: [first, second] } = await tiles(page, '#grid');
+    return Math.abs(first.top - second.top) < 1 && Math.abs(first.width - second.width) < 1;
+  }));
+
   // ---- one language for all devices -----------------------------------------
   await desk.selectOption('#language', 'en');
   ok('the editor switches language', await until(async () => (await desk.locator('#games h2').textContent()) === 'Games'));

@@ -49,7 +49,8 @@ PANEL_FILE = "panel.json"
 #   3  a button is put together: the "tile" of the panel under the "sign" of
 #      the button, in the "sign_color" and with the "sign_glow" of the panel.
 #      The signs the program ships belong to the format: a new one is a new number.
-FORMAT = 3
+#   4  a button of more than one cell: its "width" and "height"
+FORMAT = 4
 # The ready-made panel a new user starts with: Star Citizen with the keys the
 # game has by default. It ships with the program as a set, in ``samples``.
 SAMPLE_ID = "star-citizen"
@@ -74,6 +75,8 @@ MAX_SET_BYTES = 50_000_000
 MAX_SET_TEXT_BYTES = 1_000_000
 MAX_SET_FILES = 450
 MAX_SCREENS = 8
+# How many cells a button may take across, and down.
+MAX_SPAN = 4
 # A macro: how many steps, how long one of them holds its keys or waits, and
 # how long the whole of it may take.
 MAX_STEPS = 20
@@ -185,6 +188,10 @@ class Button(BaseModel):
     sign: str | None = None
     # Which of the panel's screens shows the button: an index into ``screens``.
     screen: int = Field(default=0, ge=0, lt=MAX_SCREENS)
+    # How many cells of the grid the button takes, across and down. A button
+    # wider than the panel has columns is drawn as wide as the panel.
+    width: int = Field(default=1, ge=1, le=MAX_SPAN)
+    height: int = Field(default=1, ge=1, le=MAX_SPAN)
 
     @field_validator("keys")
     @classmethod
@@ -242,7 +249,7 @@ class Panel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Every format this program reads; FORMAT is the newest of them.
-    format: Literal[1, 2, 3] = 1
+    format: Literal[1, 2, 3, 4] = 1
     # Only in a panel that is shared as a set (see PanelSet): the language its
     # texts are in, e.g. "en". A panel in the user's own folder does not carry it.
     language: str | None = Field(default=None, pattern=r"^[a-z]{2}$")
@@ -299,6 +306,8 @@ class Panel(BaseModel):
 
     def needs_format(self) -> int:
         """The first format that holds what this panel has."""
+        if any(b.width > 1 or b.height > 1 for b in self.buttons):
+            return 4
         if self.tile or self.sign_color or self.sign_glow or any(b.sign for b in self.buttons):
             return 3
         return 2 if self.macros() else 1
@@ -368,6 +377,8 @@ class LoadedPanel:
                     "image": self._url(b.image),
                     "sign": self._sign_url(b.sign),
                     "screen": b.screen,
+                    "width": b.width,
+                    "height": b.height,
                 }
                 for b in self.panel.buttons
             ],
@@ -399,7 +410,7 @@ def parse_panel(data: object) -> Panel:
     # such a file has to say what it is.
     needs = panel.needs_format()
     if data.get("format", 1) < needs:
-        what = {2: "a macro", 3: "signs or a tile"}[needs]
+        what = {2: "a macro", 3: "signs or a tile", 4: "a button of more than one cell"}[needs]
         raise ValueError(f'a panel with {what} says "format": {needs}')
     return panel
 

@@ -4,6 +4,9 @@
   display: grid;
   grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
   grid-auto-rows: minmax(84px, 1fr);
+  /* A button may take several cells. A smaller one that comes after it fills
+     the place such a button could not take, so the panel has no holes. */
+  grid-auto-flow: dense;
   gap: var(--gap);
   padding: 8px var(--gap) var(--gap);
   overflow-y: auto;
@@ -23,11 +26,13 @@
   align-content: center;
 }
 .panel-grid.square .btn {
-  width: min(
+  --cell: min(
     calc((100cqw - (var(--cols, 3) - 1) * var(--gap)) / var(--cols, 3)),
     calc((100cqh - (var(--rows, 1) - 1) * var(--gap)) / var(--rows, 1))
   );
-  aspect-ratio: 1;
+  /* A button of several cells takes the gaps between them too. */
+  width: calc(var(--cell) * var(--w, 1) + (var(--w, 1) - 1) * var(--gap));
+  height: calc(var(--cell) * var(--h, 1) + (var(--h, 1) - 1) * var(--gap));
 }
 
 /* A picture behind the panel. */
@@ -38,6 +43,9 @@
   /* The marks of a button are stacked inside it: they must not show through
      the menu or a message that lies over the buttons. */
   isolation: isolate;
+  /* The cells the button takes, across and down (see layoutGrid). */
+  grid-column: span var(--w, 1);
+  grid-row: span var(--h, 1);
   display: flex;
   align-items: center;
   justify-content: center;

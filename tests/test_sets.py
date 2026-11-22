@@ -101,6 +101,12 @@ def test_the_page_says_which_version_a_set_with_signs_needs(tmp_path):
     assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "exported",)) == 0
     listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
     assert listed.splitlines()[-1].endswith("needs Game Remote 0.11.0 or newer")
+    # A button of more than one cell came after that.
+    large = [{"id": "fire", "label": "Fire", "keys": "Space", "width": 2}]
+    write_set(tmp_path / "large", panel={**ELITE, "format": 4, "buttons": large})
+    assert build_sets.main([str(tmp_path / "out")], sources=(tmp_path / "large",)) == 0
+    listed = (tmp_path / "out" / "sets.md").read_text(encoding="utf-8")
+    assert listed.splitlines()[-1].endswith("needs Game Remote 0.12.0 or newer")
 
 
 @pytest.mark.parametrize(

@@ -16,7 +16,7 @@ Game Remote превращает телефон или планшет в пул�
 
 - **На телефон ничего не ставится.** Пульт открывается в браузере по QR-коду.
 - **Один файл на ПК.** `GameRemote.exe` запускается двойным щелчком, Python не нужен.
-- **Своя панель у каждой игры:** подписи, цвета, значки и картинки, фон, сочетания клавиш, порядок кнопок.
+- **Своя панель у каждой игры:** подписи, цвета, значки и картинки, фон, сочетания клавиш, размер и порядок кнопок.
 - **Вид игры без графического редактора:** одна плитка под все кнопки и значки из трёх сотен готовых, с поиском по названию.
 - **Кнопки «нажать», «держать» и «переключатель»,** можно нажимать несколько сразу. Переключатель светится, пока включено то, что он включает.
 - **Макросы:** одно касание нажимает несколько клавиш подряд, с паузами. Макрос работает только в окне своей игры и останавливается вторым касанием.
@@ -56,7 +56,7 @@ Game Remote turns a phone or tablet into a button panel for Windows games. You b
 
 - **Nothing to install on the phone.** The remote opens in the browser from a QR code.
 - **One file on the PC.** `GameRemote.exe` starts with a double click; no Python needed.
-- **A panel per game:** labels, colours, icons and pictures, a background, keyboard shortcuts, button order.
+- **A panel per game:** labels, colours, icons and pictures, a background, keyboard shortcuts, the size and the order of the buttons.
 - **The look of a game without a graphics editor:** one tile under all the buttons and icons out of three hundred ready ones, with a search by name.
 - **Tap, hold and toggle buttons,** several at a time. A toggle is lit while what it switches is on.
 - **Macros:** one touch presses several keys one after another, with pauses. A macro works only in the window of its game, and a second touch stops it.

@@ -2,7 +2,8 @@
 // so what the editor shows is what the phone gets.
 
 // button: { id, label, type: 'tap' | 'hold' | 'toggle' | 'macro', on, color,
-//           image (a URL or null), sign (a URL or null) }
+//           image (a URL or null), sign (a URL or null),
+//           width, height (cells of the grid; one when missing) }
 export function buttonNode(button) {
   const node = document.createElement('button');
   node.type = 'button';
@@ -41,26 +42,62 @@ export function buttonNode(button) {
   return node;
 }
 
-// Portrait uses the panel's own column count; a wide screen fits twice as many.
-export function columnsFor(panel, wide) {
-  const count = panel.buttons.length;
-  let columns = wide ? Math.min(count, panel.columns * 2) : panel.columns;
-  // Square buttons stand in even rows: six on a wide screen are 3 + 3, not 4 + 2.
-  if (wide && panel.shape === 'square' && columns > 0) {
-    columns = Math.ceil(count / Math.ceil(count / columns));
+// The cells of the grid a button takes: across, never more than the grid has
+// columns, and down.
+const cellsOf = (button, columns) => [Math.min(button.width || 1, columns), button.height || 1];
+
+// How many rows the buttons fill. The grid puts every button into the first
+// free place that holds it, row by row (grid-auto-flow: dense); so does this.
+function rowsFor(buttons, columns) {
+  const taken = new Set();
+  let rows = 0;
+  let free = 0; // the first cell nothing lies in: no button finds a place before it
+  for (const button of buttons) {
+    const [across, down] = cellsOf(button, columns);
+    const place = (at) => Array.from(
+      { length: across * down }, (_, n) => at + (n % across) + Math.floor(n / across) * columns,
+    );
+    while (taken.has(free)) free += 1;
+    let at = free;
+    while ((at % columns) + across > columns || place(at).some((cell) => taken.has(cell))) at += 1;
+    place(at).forEach((cell) => taken.add(cell));
+    rows = Math.max(rows, Math.floor(at / columns) + down);
   }
-  return Math.max(1, columns);
+  return rows;
 }
 
-// Sets the grid's shape without touching its buttons, so a finger that holds
-// one keeps holding it when the phone is turned.
+// Portrait uses the panel's own column count; a wide screen fits twice as many.
+export function columnsFor(panel, wide) {
+  if (!wide) return panel.columns;
+  // No more columns than the buttons fill when they stand in one row.
+  const inOneRow = panel.buttons.reduce((sum, button) => sum + cellsOf(button, panel.columns * 2)[0], 0);
+  let columns = Math.max(1, Math.min(inOneRow, panel.columns * 2));
+  // Square buttons stand in even rows: six on a wide screen are 3 + 3, not
+  // 4 + 2. That is the fewest columns that make no more rows, and never fewer
+  // than the widest button takes: it would lose its width for it.
+  if (panel.shape === 'square') {
+    const widest = Math.max(1, ...panel.buttons.map((button) => cellsOf(button, columns)[0]));
+    const rows = rowsFor(panel.buttons, columns);
+    while (columns > widest && rowsFor(panel.buttons, columns - 1) === rows) columns -= 1;
+  }
+  return columns;
+}
+
+// Sets the grid's shape and the place its buttons take in it. The buttons
+// themselves stay, so a finger that holds one keeps holding it when the phone
+// is turned. The grid holds the buttons of `panel`, in their order.
 export function layoutGrid(grid, panel, wide = false) {
   const columns = columnsFor(panel, wide);
   grid.classList.add('panel-grid');
   // Square buttons leave room around them, so the background shows.
   grid.classList.toggle('square', panel.shape === 'square');
   grid.style.setProperty('--cols', String(columns));
-  grid.style.setProperty('--rows', String(Math.max(1, Math.ceil(panel.buttons.length / columns))));
+  grid.style.setProperty('--rows', String(Math.max(1, rowsFor(panel.buttons, columns))));
+  panel.buttons.forEach((button, index) => {
+    const [across, down] = cellsOf(button, columns);
+    grid.children[index]?.style.setProperty('--w', String(across));
+    grid.children[index]?.style.setProperty('--h', String(down));
+  });
 }
 
 // What a panel gives to all its buttons: the tile under those that have no
@@ -116,9 +153,9 @@ export function renderTabs(strip, names, current, pick, event = 'click') {
 
 // Fills `grid` with the panel's buttons and returns the nodes in order.
 export function renderGrid(grid, panel, { wide = false } = {}) {
-  layoutGrid(grid, panel, wide);
   themeGrid(grid, panel);
   const nodes = panel.buttons.map((button) => buttonNode(button));
   grid.replaceChildren(...nodes);
+  layoutGrid(grid, panel, wide);
   return nodes;
 }
