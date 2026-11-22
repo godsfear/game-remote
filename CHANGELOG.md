@@ -1,5 +1,29 @@
 # Изменения / Changelog
 
+## 0.11.1
+
+Свечение значка теперь показывает, что кнопка делает, а не украшает все кнопки сразу.
+
+- В 0.11.0 светились все значки игры, а кнопка под пальцем, наоборот, белела и теряла ореол. Теперь в покое значок не светится. Он светится, пока палец на кнопке, а у переключателя и макроса — всё время, пока они включены.
+- Кнопка со значком больше не выгорает в белый при нажатии: значок остаётся своего цвета и светится. Белая рамка и лёгкое сжатие под пальцем остались.
+- Галочка в настройках игры называется «Свечение при нажатии», под ней сказано, когда значок светится. Игра без этой галочки ведёт себя как раньше: значки не светятся, а кнопка под пальцем становится ярче.
+- Готовая панель Star Citizen светится более ярким цветом. Если вы импортировали набор Star Citizen в 0.11.0, в вашей панели остался прежний тёмный цвет, и свечение будет слабым: выберите в настройках игры цвет светлее или импортируйте набор со [страницы наборов](https://github.com/godsfear/game-remote/releases/tag/panel-sets) заново.
+
+Файл панели не изменился: наборы, сделанные в 0.11.0, читаются как прежде.
+
+Обновление: скачайте новый `GameRemote.exe` и запускайте его вместо старого. Игры, кнопки и подключённые устройства остаются на месте. Версии начиная с 0.5.0 сообщат об этом выпуске сами, строкой вверху страницы на ПК.
+
+The glow of an icon now tells what its button does, where it used to adorn every button at once.
+
+- In 0.11.0 every icon of a game glowed, and the button under a finger turned white and lost its glow. Now an icon does not glow at rest. It glows while a finger is on its button, and for as long as a toggle is on or a macro runs.
+- A button with an icon no longer burns out to white when it is pressed: the icon keeps its colour and glows. The white frame and the slight squeeze under a finger stay.
+- The box in the settings of a game is called "Glow when pressed", and a line under it says when an icon glows. A game without that box behaves as before: its icons do not glow, and a button grows brighter under a finger.
+- The ready-made Star Citizen panel glows in a brighter colour. When you imported the Star Citizen set in 0.11.0, your panel has the dark colour it came with, and the glow is faint: choose a lighter colour in the settings of the game, or import the set from the [page of sets](https://github.com/godsfear/game-remote/releases/tag/panel-sets) again.
+
+The file of a panel did not change: sets made in 0.11.0 are read as before.
+
+Updating: download the new `GameRemote.exe` and start it in place of the old one. Games, buttons and paired devices stay where they are. Versions from 0.5.0 on tell about this release by themselves, in a line at the top of the page on the PC.
+
 ## 0.11.0
 
 Кнопка собирается из плитки и значка: панель в стиле игры теперь делается без графического редактора.
